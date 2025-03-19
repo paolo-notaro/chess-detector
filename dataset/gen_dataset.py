@@ -1,31 +1,26 @@
 import bpy
-import csv
 import os
 import math
 import random
-import requests
-import zstandard as zstd
 import json
+import chess.pgn
 import hashlib
+import io
 from chess import Board, SQUARES, square_file, square_rank
 
 # Dataset
-DATASET_ZIP = r"https://database.lichess.org/lichess_db_puzzle.csv.zst"
-POSITIONS_CSV = r"positions.csv"
+GAMES = r"lichess_processed.pgn"
 
 # File paths
 BLENDER_EXECUTABLE = r"C:/Program Files/Blender Foundation/Blender 4.3/blender.exe"
 BLENDER_SCENE = os.path.abspath(r"./ChessBoard/Source/Chess Board.blend")
 RENDER_PATH = os.path.abspath(r"./images/")
-POSITIONS_CSV = os.path.abspath(r"./positions.csv")
 os.makedirs(RENDER_PATH, exist_ok=True)
 
 METADATA_FILE = os.path.abspath(r"./metadata.json")
 
 # Generation settings
 BATCH_SIZE = 1 # Boards processed before saving state and metadata
-MOVES_PER_BOARD = 5 # Number of moves to make on each board
-RECURSION_DEPTH = 1 # Times to recurse on each board. 1 will generate 5 moves for each board (along with the resulting positions), but will not recurse on the resulting positions.
 
 # Load the scene
 bpy.app.binary_path = BLENDER_EXECUTABLE
@@ -145,80 +140,41 @@ def render_board(board, board_id):
     clear_scene()
 
 
-def process_board(board, metadata, recursion_level = 0):
+def process_board(board, metadata):
     board_fen = board.board_fen().strip()
     board_id = hashlib.md5(board_fen.encode()).hexdigest() # Generate a unique ID for the board
     
     if(board_id in metadata["boards"]):
-        print(f"Board '{board_id}' already exists.")
-        return board_id
-    
-    render_board(board, board_id)
-
-    if recursion_level < RECURSION_DEPTH:
-        moves = random.choices(list(board.legal_moves), k=MOVES_PER_BOARD)
-        board_moves = []
-        for move in moves:
-            new_board = board.copy()
-            new_board.push(move)
-            derived_id = process_board(new_board, metadata, recursion_level + 1)
-            board_moves.append({"uci": move.uci(), "id": derived_id})
-        metadata["boards"][board_id] = {"fen": board_fen, "moves": board_moves}
-    else:    
-        metadata["boards"][board_id] = {"fen": board_fen}
-    print(f"Generated board '{board_id}'.")
+        print(f"Board '{board_id}' already exists. Skipping rendering.")
+    else:
+        render_board(board, board_id)
+        print(f"Generated board '{board_id}'.")
+        metadata["boards"][board_id] = {"fen": board_fen, "lines": {}}
 
     return board_id
 
-def download_file(url, output_path):
-    """Download a file from a given URL and save it to the specified path."""
-    response = requests.get(url, stream=True)
-    response.raise_for_status()  # Raise an error for bad responses
+def process_game(pgn_str, metadata):
+    try:
+        game = chess.pgn.read_game(io.StringIO(pgn_str[:-1]))
+    except:
+        return False
+    board = Board()
+    prev_board_id = process_board(board, metadata)
+    for move in game.mainline_moves():
+        board.push(move)
+        new_board_id = process_board(board, metadata)
 
-    with open(output_path, "wb") as file:
-        for chunk in response.iter_content(chunk_size=8192):
-            file.write(chunk)
-    print(f"File downloaded: {output_path}")
+        # Save the move in the metadata
+        move_str = move.uci()
 
-def extract_zst(input_path, output_path):
-    """Extract a .zst file to the specified output path."""
-    with open(input_path, "rb") as compressed_file:
-        with open(output_path, "wb") as decompressed_file:
-            dctx = zstd.ZstdDecompressor()
-            dctx.copy_stream(compressed_file, decompressed_file)
-    print(f"File extracted: {output_path}")
+        if move_str not in metadata["boards"][prev_board_id]["lines"]:
+            metadata["boards"][prev_board_id]["lines"][move_str] = new_board_id
 
-def download_positions():
+        prev_board_id = new_board_id
     
-    if not os.path.exists(POSITIONS_CSV):
-        if not os.path.exists("positions_raw.csv"):
-            if not os.path.exists("lichess_db_puzzle.csv.zst"):
-                print("Downloading positions (this may take a while)...")
-                download_file(DATASET_ZIP, "lichess_db_puzzle.csv.zst")
-            # Decompress the dataset    
-            print("Decompressing positions...")
-            extract_zst("lichess_db_puzzle.csv.zst", "positions_raw.csv")
-            os.remove("lichess_db_puzzle.csv.zst")
-        # Strip unnecessary information
-
-        print("Stripping positions of unnecessary information...")
-        with open("positions_raw.csv", "r") as file:
-            csv_reader = csv.reader(file)
-            with open(POSITIONS_CSV, "w", newline="") as out_file:
-                csv_writer = csv.writer(out_file)
-                for row in csv_reader:
-                    csv_writer.writerow([row[1]])
-        os.remove("positions_raw.csv")
-    print("Extracted positions.")
-    
+    return True
 
 if __name__ == "__main__":
-    if not os.path.exists(POSITIONS_CSV):
-        download_positions()
-    
-    with open(POSITIONS_CSV, "r") as file:
-        csv_reader = csv.reader(file)
-        POSITIONS = list(csv_reader)
     
     if(os.path.exists(METADATA_FILE)):
         with open(METADATA_FILE, "r") as metadata_file:
@@ -226,12 +182,20 @@ if __name__ == "__main__":
     else:
         metadata = {"last_batch_end": 0, "boards" : {}}
 
-    while metadata["last_batch_end"] < len(POSITIONS):
-        start = metadata["last_batch_end"] + 1
-        end = min(metadata["last_batch_end"] + BATCH_SIZE + 1, len(POSITIONS))
-        print(f"Generating boards {start} to {end - 1}...")
+    with open(GAMES, "r") as games_file:
+        games = games_file.readlines()[metadata["last_batch_end"]:]
+
+    while metadata["last_batch_end"] < len(games):
+        start = metadata["last_batch_end"]
+        end = min(metadata["last_batch_end"] + BATCH_SIZE + 1, len(games))
+        print(f"Generating games {start} to {end - 1}...")
+
         for i in range(start, end):
-            process_board(Board(POSITIONS[i][0]), metadata, recursion_level = 0)
+            if process_game(games[i], metadata):
+                print(f"Processed game {i}.")
+            else:
+                print(f"PGN of game {i} could not be parsed. Skipping.")
+
         metadata["last_batch_end"] += BATCH_SIZE
         print("Saving metadata...")
         with open(METADATA_FILE, "w") as metadata_file:
