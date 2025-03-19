@@ -144,7 +144,9 @@ def process_board(board, metadata):
     board_fen = board.board_fen().strip()
     board_id = hashlib.md5(board_fen.encode()).hexdigest() # Generate a unique ID for the board
     
-    if not board_id in metadata["boards"]:
+    if board_id in metadata["boards"]:
+        print(f"Board '{board_id}' already in metadata.")
+    else:
         metadata["boards"][board_id] = {"fen": board_fen, "lines": {}}
     
     if os.path.exists(os.path.join(RENDER_PATH, f"{board_id}.png")):
