@@ -181,4 +181,5 @@ cython_debug/
 dataset/images
 dataset/images/*
 dataset/metadata.json
-dataset/lichess_processed.pgn
+*.zst
+*.pgn
