@@ -144,13 +144,15 @@ def process_board(board, metadata):
     board_fen = board.board_fen().strip()
     board_id = hashlib.md5(board_fen.encode()).hexdigest() # Generate a unique ID for the board
     
-    if(board_id in metadata["boards"]):
-        print(f"Board '{board_id}' already exists. Skipping rendering.")
+    if not board_id in metadata["boards"]:
+        metadata["boards"][board_id] = {"fen": board_fen, "lines": {}}
+    
+    if os.path.exists(os.path.join(RENDER_PATH, f"{board_id}.png")):
+        print(f"Image for board '{board_id}' already exists. Skipping rendering.")
     else:
         render_board(board, board_id)
         print(f"Generated board '{board_id}'.")
-        metadata["boards"][board_id] = {"fen": board_fen, "lines": {}}
-
+    
     return board_id
 
 def process_game(pgn_str, metadata):
@@ -187,8 +189,8 @@ if __name__ == "__main__":
 
     while metadata["last_batch_end"] < len(games):
         start = metadata["last_batch_end"]
-        end = min(metadata["last_batch_end"] + BATCH_SIZE + 1, len(games))
-        print(f"Generating games {start} to {end - 1}...")
+        end = min(metadata["last_batch_end"] + BATCH_SIZE, len(games))
+        print(f"Processing game #{start}" if start == end - 1 else f"Processing games {start} to {end - 1}...")
 
         for i in range(start, end):
             if process_game(games[i], metadata):
@@ -199,5 +201,5 @@ if __name__ == "__main__":
         metadata["last_batch_end"] += BATCH_SIZE
         print("Saving metadata...")
         with open(METADATA_FILE, "w") as metadata_file:
-            json.dump(metadata, metadata_file)
+            json.dump(metadata, metadata_file, indent=4)
         
