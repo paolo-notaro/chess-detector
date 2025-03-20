@@ -90,3 +90,7 @@ for x in range (0, 8):
 # Show the result
 cv.imshow('8x8 Chessboard Grid', img)
 cv.waitKey(5000)
+
+# Save the result
+
+cv.imwrite('./8x8_chessboard_grid.png', img)
