@@ -2,3 +2,4 @@ chess
 bpy
 zstandard
 numpy
+opencv-python

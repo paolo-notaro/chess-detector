@@ -22,9 +22,7 @@ METADATA_FILE = os.path.abspath(r"./metadata.json")
 # Generation settings
 BATCH_SIZE = 1 # Boards processed before saving state and metadata
 
-# Load the scene
-bpy.app.binary_path = BLENDER_EXECUTABLE
-bpy.ops.wm.open_mainfile(filepath=BLENDER_SCENE)
+MAX_GEN_GAMES = 1 # Maximum number of games to generate images for in this run
 
 # Lookup tables and object names
 PIECES_OBJ_NAMES = {
@@ -53,23 +51,45 @@ A1_POS = (0.12332, 0.12332)
 PIECE_PLACEMENT_VARIABILITY = 0.15 # ratio of square size
 
 LIGHT_POSITION_RANGE_XYZ = ((-0.5, 1.7), (-0.5, 1.7), (0.7, 1.7)) # meters, X variability, Y variability, Z variability
-LIGHT_INTENSITY_RANGE = (20, 100) # Watts
-LIGHT_COLOR_RANGE_RGB = ((0.9, 1), (0.8, 1) ,(0.6, 1)) # R variability, G variability, B variability
-
-AMBIENT_LIGHT_INTENSITY_RANGE = (0.2, 0.9) # Watts
+LIGHT_INTENSITY_RANGE = (20, 70) # Watts
+LIGHT_COLOR_RANGE_RGB = ((0.7, 0.9), (0.8, 0.9) ,(0.6, 0.9)) # R variability, G variability, B variability
 
 # Table materials
 TABLE_OBJ_NAME = "Table"
-TABLE_MATERIALS = ["Rosewood"]
+TABLE_MATERIALS = ["Rosewood", "Fabric"]
 
 # Chess set materials
 BOARD_OBJ_NAME = "ChessBoard"
 CHESS_SET_MATERIALS = ["GreenWhite", "Wood"]
 
-def setup_scene():
+def setup_blender():
+    # Load the scene
+    bpy.app.binary_path = BLENDER_EXECUTABLE
+    bpy.ops.wm.open_mainfile(filepath=BLENDER_SCENE)
+    bpy.data.scenes[0].render.engine = "CYCLES"
 
-    # Set ambient light intensity (world surface)
-    bpy.data.worlds["World"].node_tree.nodes["Background"].inputs[1].default_value = random.uniform(*AMBIENT_LIGHT_INTENSITY_RANGE)
+    # Set the device_type
+    bpy.context.preferences.addons[
+        "cycles"
+    ].preferences.compute_device_type = "CUDA" # or "OPENCL"
+
+    # Set the device and feature set
+    bpy.context.scene.cycles.device = "GPU"
+
+    # get_devices() to let Blender detects GPU device
+    bpy.context.preferences.addons["cycles"].preferences.get_devices()
+    print(bpy.context.preferences.addons["cycles"].preferences.compute_device_type)
+    for d in bpy.context.preferences.addons["cycles"].preferences.devices:
+        d["use"] = 1 # Using all devices, include GPU and CPU
+        print(d["name"], d["use"])
+        
+
+def setup_scene(chess_set = None):
+
+    """ 
+        Set up the scene with random lighting and the provided materials (or random if not provided).
+        Returns the chess set material
+    """
 
     # Set point light intensity, color and position
     light = bpy.data.objects[LIGHT_NAME]
@@ -82,20 +102,21 @@ def setup_scene():
     table.data.materials.clear()
     table.data.materials.append(bpy.data.materials[random.choice(TABLE_MATERIALS) + "_Table"])
 
-    # Select random chess set material
-    chessSet = random.choice(CHESS_SET_MATERIALS)
+    # Select random chess set material, if not specified
+    if chess_set is None:
+        chess_set = random.choice(CHESS_SET_MATERIALS)
     
     # Apply to board
     board = bpy.data.objects[BOARD_OBJ_NAME]
     board.data.materials.clear()
-    board.data.materials.append(bpy.data.materials[chessSet + "_Board"])
+    board.data.materials.append(bpy.data.materials[chess_set + "_Board"])
 
     # Apply to pieces
     for piece in PIECES_OBJ_NAMES.values():
         bpy.data.objects[piece].data.materials.clear()
-        bpy.data.objects[piece].data.materials.append(bpy.data.materials[chessSet + "_Pieces_" + piece.split("_")[-1]])
+        bpy.data.objects[piece].data.materials.append(bpy.data.materials[chess_set + "_Pieces_" + piece.split("_")[-1]])
 
-
+    return chess_set
 
 
 
@@ -134,20 +155,19 @@ def clear_scene():
         bpy.data.objects.remove(obj)
 
 def render_board(board, board_id):
-    setup_scene()
     arrange_pieces(board)
     render_image(f"{board_id}.png")
     clear_scene()
 
 
-def process_board(board, metadata):
+def process_board(board, chess_set, metadata):
     board_fen = board.board_fen().strip()
     board_id = hashlib.md5(board_fen.encode()).hexdigest() # Generate a unique ID for the board
     
     if board_id in metadata["boards"]:
         print(f"Board '{board_id}' already in metadata.")
     else:
-        metadata["boards"][board_id] = {"fen": board_fen, "lines": {}}
+        metadata["boards"][board_id] = {"fen": board_fen, "set": chess_set, "lines": {}}
     
     if os.path.exists(os.path.join(RENDER_PATH, f"{board_id}.png")):
         print(f"Image for board '{board_id}' already exists. Skipping rendering.")
@@ -162,11 +182,15 @@ def process_game(pgn_str, metadata):
         game = chess.pgn.read_game(io.StringIO(pgn_str[:-1]))
     except:
         return False
+    
+    # Set up the scene once per game, so each game is consistent in terms of lighting and materials
+    chess_set = setup_scene()
+
     board = Board()
-    prev_board_id = process_board(board, metadata)
+    prev_board_id = process_board(board, chess_set, metadata)
     for move in game.mainline_moves():
         board.push(move)
-        new_board_id = process_board(board, metadata)
+        new_board_id = process_board(board, chess_set, metadata)
 
         # Save the move in the metadata
         move_str = move.uci()
@@ -178,13 +202,33 @@ def process_game(pgn_str, metadata):
     
     return True
 
+def generate_base_boards():
+    clear_scene()
+    # For each material whose empty board isn't generated yet, generate it
+    for material in CHESS_SET_MATERIALS:
+        if not os.path.exists(os.path.join(RENDER_PATH, f"empty_board_{material}.png")):
+            print(f"Generating empty board for material '{material}'...")
+            setup_scene(material)
+            render_image(f"empty_board_{material}.png")
+
+def save_metadata(metadata):
+    print("Saving metadata...")
+    with open(METADATA_FILE, "w") as metadata_file:
+        json.dump(metadata, metadata_file, indent=4)
+                
+
 if __name__ == "__main__":
     
+    setup_blender()
+
     if(os.path.exists(METADATA_FILE)):
         with open(METADATA_FILE, "r") as metadata_file:
             metadata = json.load(metadata_file)
     else:
         metadata = {"last_batch_end": 0, "boards" : {}}
+
+    # Check if base board generation is needed
+    generate_base_boards()
 
     with open(GAMES, "r") as games_file:
         games = games_file.readlines()[metadata["last_batch_end"]:]
@@ -194,14 +238,19 @@ if __name__ == "__main__":
         end = min(metadata["last_batch_end"] + BATCH_SIZE, len(games))
         print(f"Processing game #{start}" if start == end - 1 else f"Processing games {start} to {end - 1}...")
 
+        generated_games = 0
         for i in range(start, end):
             if process_game(games[i], metadata):
                 print(f"Processed game {i}.")
+                generated_games += 1
             else:
                 print(f"PGN of game {i} could not be parsed. Skipping.")
+            
+            if generated_games >= MAX_GEN_GAMES:
+                print("Max games generated. Exiting.")
+                metadata["last_batch_end"] = end
+                save_metadata(metadata)
+                exit(0)
 
         metadata["last_batch_end"] += BATCH_SIZE
-        print("Saving metadata...")
-        with open(METADATA_FILE, "w") as metadata_file:
-            json.dump(metadata, metadata_file, indent=4)
-        
+        save_metadata(metadata)
