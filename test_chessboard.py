@@ -1,7 +1,6 @@
 import numpy as np
 import cv2 as cv
 import glob
-import random
  
 # termination criteria
 criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
@@ -37,7 +36,7 @@ for fname in images:
  
 ret, mtx, dist, rvecs, tvecs = cv.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)
 
-def draw_box_contour(img, imgpts, color, thickness=1):
+def draw_box(img, imgpts, color, thickness=1):
     imgpts = np.int32(imgpts).reshape(-1,2)
     
     # bottom
@@ -60,6 +59,42 @@ def draw_box_contour(img, imgpts, color, thickness=1):
 
     return img
 
+
+def rectify_board(img, corners, size=224):
+    """
+    Warp perspective to get a top-down view of the chessboard.
+
+    Parameters:
+        img: Input BGR or grayscale image
+        corners: 4x2 array of image coordinates (top-left, top-right, bottom-right, bottom-left)
+        size: Target square image size (default 224)
+
+    Returns:
+        Warped grayscale 224x224 image (float32, normalized [0,1])
+    """
+    # Define target square corners
+    dst_pts = np.array([
+        [0, 0],
+        [size-1, 0],
+        [size-1, size-1],
+        [0, size-1]
+    ], dtype=np.float32)
+
+    src_pts = np.array(corners, dtype=np.float32)
+
+    # Compute homography
+    matrix = cv.getPerspectiveTransform(src_pts, dst_pts)
+    warped = cv.warpPerspective(img, matrix, (size, size))
+
+    # Convert to grayscale if needed
+    if len(warped.shape) == 3:
+        warped = cv.cvtColor(warped, cv.COLOR_BGR2GRAY)
+
+    # Normalize to [0, 1]
+    warped = warped.astype(np.float32) / 255.0
+
+    return warped
+
 img = cv.imread('./dataset/images/b04fa05490a37470481f5bfd6b36392c.png')
 h,  w = img.shape[:2]
 
@@ -76,16 +111,20 @@ if ret == True:
 
 ret, rvecs, tvecs = cv.solvePnP(objp, corners2, mtx, dist)
 
-# draw a point for each square in the real chessboard
-cube = np.float32([[0,0,0], [0,1,0], [1,1,0], [1,0,0],
-                   [0,0,-1],[0,1,-1],[1,1,-1],[1,0,-1] ])
+# chessboard corners
+corners = np.float32([
+    [-1, -1, 0],
+    [7, -1, 0],
+    [7, 7, 0],
+    [-1, 7, 0]
+])
 
-for x in range (0, 8):
-    for y in range (0, 8):
-        imgpts, jac = cv.projectPoints(cube + [x - 1, y - 1, 0], rvecs, tvecs, mtx, dist)
-        random_color = (random.randint(0,255),random.randint(0,255),random.randint(0,255))
-        img = draw_box_contour(img,imgpts, random_color)
-            
+# project 3D points to image plane
+imgpts, jac = cv.projectPoints(corners, rvecs, tvecs, mtx, dist)
+
+imgpts = np.int32(imgpts).reshape(-1,2)
+
+img = rectify_board(img, imgpts, size=512)
 
 # Show the result
 cv.imshow('8x8 Chessboard Grid', img)

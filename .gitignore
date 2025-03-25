@@ -180,6 +180,8 @@ cython_debug/
 # Large dataset files
 dataset/images
 dataset/images/*
+dataset/preprocessed
+dataset/preprocessed/*
 dataset/metadata.json
 *.zst
 *.pgn
