@@ -2,11 +2,7 @@ import requests
 import zstandard as zstd
 import os
 
-ZST_URL = "https://database.lichess.org/standard/lichess_db_standard_rated_2016-03.pgn.zst"
-
-KEEP_N = 10000  # Number of games to keep
-OUTPUT_PATH = "lichess_processed.pgn" # Output path for the processed PGN file
-
+LICHESS_URL = "https://database.lichess.org/standard/"
 
 def download_file(url, output_path):
 
@@ -37,7 +33,6 @@ def download_file(url, output_path):
 
 def extract_zst(input_path, output_path):
 
-
     """Extract a .zst file to the specified output path."""
 
 
@@ -55,30 +50,32 @@ def extract_zst(input_path, output_path):
 
     print(f"File extracted: {output_path}")
 
+def download_from_lichess(name = "lichess_db_standard_rated_2016-03", output_path = "lichess_truncated.pgn", keep_n = 10000):
 
-if __name__ == "__main__":
-    if os.path.exists(OUTPUT_PATH) and os.path.getsize(OUTPUT_PATH) > 0:
-        print(f"Processed PGN file already exists: {OUTPUT_PATH}")
-        exit(0)
+    """ Download a compressed PGN file from Lichess and extract it to a specified path.
+        Strip the file to keep only the first n games.
+    """
+
+    if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+        print(f"Processed PGN file already exists: {output_path}")
+        return
     
     print("Downloading and extracting positions dataset from Lichess. This whole process may take a while...")
 
-    if not os.path.exists("lichess_db_standard_rated_2016-03.pgn.zst"):
+    if not os.path.exists(f"{name}.pgn.zst"):
         print("Downloading compressed file... ", end="")
-        download_file(ZST_URL, "lichess_db_standard_rated_2016-03.pgn.zst")
-
-    if not os.path.exists("lichess_db_standard_rated_2016-03.pgn"):
+        download_file(LICHESS_URL + name + ".pgn.zst", f"{name}.pgn.zst")
+    
+    if not os.path.exists(f"{name}.pgn"):
         print("Extracting compressed file...", end="")
-        extract_zst("lichess_db_standard_rated_2016-03.pgn.zst", "lichess_db_standard_rated_2016-03.pgn")
-
+        extract_zst(f"{name}.pgn.zst", f"{name}.pgn")
+    
     print("Stripping and truncating file...", end="")
-    with open("lichess_db_standard_rated_2016-03.pgn", "r") as file, open(OUTPUT_PATH, "w") as output_file:
+    with open(f"{name}.pgn", "r") as file, open(output_path, "w") as output_file:
         lines = [line for line in file.readlines() if line.startswith('1')]
-        output_file.writelines(lines[:KEEP_N])
-    print(f"Processed PGN file saved: {OUTPUT_PATH}")
-
+        output_file.writelines(lines[:keep_n])
+    print(f"Processed PGN file saved: {output_path}")
+    
     print("Cleaning up...", end="")
-    os.remove("lichess_db_standard_rated_2016-03.pgn.zst")
-    os.remove("lichess_db_standard_rated_2016-03.pgn")
-    print("Done!")
-            
+    os.remove(f"{name}.pgn.zst")
+    os.remove(f"{name}.pgn")

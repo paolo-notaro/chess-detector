@@ -3,3 +3,6 @@ bpy
 zstandard
 numpy
 opencv-python
+torch
+pandas
+tqdm

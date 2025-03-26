@@ -4,12 +4,10 @@ import json
 import glob
 import os
 
-# termination criteria
-criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
- 
-# prepare object points, like (0,0,0), (1,0,0), (2,0,0) ....,(6,5,0)
-objp = np.zeros((7*7,3), np.float32)
-objp[:,:2] = np.mgrid[0:7,0:7].T.reshape(-1,2)
+
+# Validate set ratio
+VALIDATE_SET_RATIO = 0.2
+
 
 # chessboard corners
 OBJ_SPACE_CORNERS = np.float32([
@@ -19,11 +17,21 @@ OBJ_SPACE_CORNERS = np.float32([
     [-1, 7, 0]
 ])
 
-def calibrate_camera():
+def calibrate_camera(path_match):
+
+    """ Return the image points of the chessboard corners, calibrated from empty board images from the path match. """
+
+    # termination criteria
+    criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+    
+    # prepare object points, like (0,0,0), (1,0,0), (2,0,0) ....,(6,5,0)
+    objp = np.zeros((7*7,3), np.float32)
+    objp[:,:2] = np.mgrid[0:7,0:7].T.reshape(-1,2)
+
     # Arrays to store object points and image points from all the images.
     objpoints = [] # 3d point in real world space
     imgpoints = [] # 2d points in image plane.
-    images = glob.glob('./images/empty_board_*.png')
+    images = glob.glob(path_match)
 
     for fname in images:
         img = cv.imread(fname)
@@ -48,7 +56,12 @@ def calibrate_camera():
 
     ret, rvecs, tvecs = cv.solvePnP(objp, corners2, mtx, dist)
 
-    return ret, mtx, dist, rvecs, tvecs
+    imgpts, jac = cv.projectPoints(OBJ_SPACE_CORNERS, rvecs, tvecs, mtx, dist)
+
+    imgpts = np.int32(imgpts).reshape(-1,2)
+
+    return imgpts
+
 
 def rectify_board(img, corners, size=224):
     """
@@ -85,27 +98,11 @@ def rectify_board(img, corners, size=224):
 
     return warped
 
-if __name__ == '__main__':
-    with open('metadata.json', 'r') as f:
-        metadata = json.load(f)
-    
-    os.makedirs('preprocessed', exist_ok=True)
-    
-    ret, mtx, dist, rvecs, tvecs = calibrate_camera()
+def process_image(frompath, topath, chessboard_corners):
+    img = cv.imread(frompath)
 
-    for board_id in metadata['boards']:
-        if os.path.exists(f'preprocessed/{board_id}.png'):
-            print(f'Board {board_id} already exists.')
-            continue
-        
-        img = cv.imread(f'images/{board_id}.png')
+    img = rectify_board(img, chessboard_corners)
 
-        imgpts, jac = cv.projectPoints(OBJ_SPACE_CORNERS, rvecs, tvecs, mtx, dist)
+    cv.imwrite(topath, img * 255.0)
 
-        imgpts = np.int32(imgpts).reshape(-1,2)
-
-        img = rectify_board(img, imgpts)
-
-        cv.imwrite(f'preprocessed/{board_id}.png', img * 255.0)
-
-        print(f'Board {board_id} processed.')
+    print(f"Image {frompath} processed.")

@@ -1,256 +1,99 @@
-import bpy
 import os
-import math
+import download
+import analysis
+import csv
+import rendering
+from chess import Board
+import postprocessing
 import random
-import json
-import chess.pgn
-import hashlib
-import io
-from chess import Board, SQUARES, square_file, square_rank
 
 # Dataset
 GAMES = r"lichess_processed.pgn"
+MOVES = r"entries.csv"
 
 # File paths
-BLENDER_EXECUTABLE = r"C:/Program Files/Blender Foundation/Blender 4.3/blender.exe"
-BLENDER_SCENE = os.path.abspath(r"./ChessBoard/Source/Chess Board.blend")
 RENDER_PATH = os.path.abspath(r"./images/")
-os.makedirs(RENDER_PATH, exist_ok=True)
+PREPROCESS_PATH = os.path.abspath(r"./preprocessed/")
+LAST_PROCESSED_INDEX_FILE = os.path.abspath(r"./last_index.txt")
 
 METADATA_FILE = os.path.abspath(r"./metadata.json")
 
 # Generation settings
-BATCH_SIZE = 1 # Boards processed before saving state and metadata
+BATCH_SIZE = 1 # Entries processed before saving state
 
-MAX_GEN_GAMES = 1 # Maximum number of games to generate images for in this run
-
-# Lookup tables and object names
-PIECES_OBJ_NAMES = {
-    "r": "Rook_Dark",
-    "n": "Knight_Dark",
-    "b": "Bishop_Dark",
-    "q": "Queen_Dark",
-    "k": "King_Dark",
-    "p": "Pawn_Dark",
-    "R": "Rook_Light",
-    "N": "Knight_Light",
-    "B": "Bishop_Light",
-    "Q": "Queen_Light",
-    "K": "King_Light",
-    "P": "Pawn_Light"
-}
-LIGHT_NAME = "Point"
-
-
-# Scene settings
-SQUARE_SIZE = 0.128
-PIECE_Z_COORD = 0.014951
-A1_POS = (0.12332, 0.12332)
-
-# Randomization settings
-PIECE_PLACEMENT_VARIABILITY = 0.15 # ratio of square size
-
-LIGHT_POSITION_RANGE_XYZ = ((-0.5, 1.7), (-0.5, 1.7), (0.7, 1.7)) # meters, X variability, Y variability, Z variability
-LIGHT_INTENSITY_RANGE = (20, 70) # Watts
-LIGHT_COLOR_RANGE_RGB = ((0.7, 0.9), (0.8, 0.9) ,(0.6, 0.9)) # R variability, G variability, B variability
-
-# Table materials
-TABLE_OBJ_NAME = "Table"
-TABLE_MATERIALS = ["Rosewood", "Fabric"]
-
-# Chess set materials
-BOARD_OBJ_NAME = "ChessBoard"
-CHESS_SET_MATERIALS = ["GreenWhite", "Wood"]
-
-def setup_blender():
-    # Load the scene
-    bpy.app.binary_path = BLENDER_EXECUTABLE
-    bpy.ops.wm.open_mainfile(filepath=BLENDER_SCENE)
-    bpy.data.scenes[0].render.engine = "CYCLES"
-
-    # Set the device_type
-    bpy.context.preferences.addons[
-        "cycles"
-    ].preferences.compute_device_type = "CUDA" # or "OPENCL"
-
-    # Set the device and feature set
-    bpy.context.scene.cycles.device = "GPU"
-
-    # get_devices() to let Blender detects GPU device
-    bpy.context.preferences.addons["cycles"].preferences.get_devices()
-    print(bpy.context.preferences.addons["cycles"].preferences.compute_device_type)
-    for d in bpy.context.preferences.addons["cycles"].preferences.devices:
-        d["use"] = 1 # Using all devices, include GPU and CPU
-        print(d["name"], d["use"])
+def get_moves():
+    if not os.path.exists(MOVES):
+        download.download_from_lichess(name = "lichess_db_standard_rated_2016-03", output_path = "lichess_truncated.pgn", keep_n = 10000)
+        sorted_moves = analysis.analyze_games("lichess_truncated.pgn")
+        print(f"Total of {sorted_moves['total']} moves found. What % of moves should we keep (out of 100)?")
         
+        n_moves = int(input())
 
-def setup_scene(chess_set = None):
+        print(f"Do you want to set a minimum count for each move type? (number or empty)")
 
-    """ 
-        Set up the scene with random lighting and the provided materials (or random if not provided).
-        Returns the chess set material
-    """
+        typed = input()
 
-    # Set point light intensity, color and position
-    light = bpy.data.objects[LIGHT_NAME]
-    light.data.energy = random.uniform(*LIGHT_INTENSITY_RANGE)
-    light.data.color = (random.uniform(*LIGHT_COLOR_RANGE_RGB[0]), random.uniform(*LIGHT_COLOR_RANGE_RGB[1]), random.uniform(*LIGHT_COLOR_RANGE_RGB[2]))
-    light.location = (random.uniform(*LIGHT_POSITION_RANGE_XYZ[0]), random.uniform(*LIGHT_POSITION_RANGE_XYZ[1]), random.uniform(*LIGHT_POSITION_RANGE_XYZ[2]))
+        min_count = int(typed) if typed != "" else 0
 
-    # Select random table surface material
-    table = bpy.data.objects[TABLE_OBJ_NAME]
-    table.data.materials.clear()
-    table.data.materials.append(bpy.data.materials[random.choice(TABLE_MATERIALS) + "_Table"])
+        moves = list(analysis.select(sorted_moves, n_moves / 100, n_moves / 100, n_moves / 100, n_moves / 100, min_count = min_count, print_info = True))
 
-    # Select random chess set material, if not specified
-    if chess_set is None:
-        chess_set = random.choice(CHESS_SET_MATERIALS)
-    
-    # Apply to board
-    board = bpy.data.objects[BOARD_OBJ_NAME]
-    board.data.materials.clear()
-    board.data.materials.append(bpy.data.materials[chess_set + "_Board"])
+        print("Shuffling moves...")
+        random.shuffle(moves)
 
-    # Apply to pieces
-    for piece in PIECES_OBJ_NAMES.values():
-        bpy.data.objects[piece].data.materials.clear()
-        bpy.data.objects[piece].data.materials.append(bpy.data.materials[chess_set + "_Pieces_" + piece.split("_")[-1]])
+        print("Saving moves...")
+        with open(MOVES, "w") as moves_file:
+            moves_file.write("before_fen,move_uci,after_fen\n")
+            for before_id, move, after_id in moves:
+                moves_file.write(f"{before_id},{move},{after_id}\n")
 
-    return chess_set
+    with open(MOVES, "r") as moves_file:
+        return list(csv.reader(moves_file))[1:]
 
-
-
-def arrange_pieces(board : Board):
-    for square in SQUARES:
-        piece = board.piece_at(square)
-        if piece is not None:
-            piece_obj = bpy.data.objects[PIECES_OBJ_NAMES[piece.symbol()]]
-
-            # duplicate the object
-            new_obj = piece_obj.copy()
-            new_obj.data = piece_obj.data.copy()
-            bpy.context.collection.objects.link(new_obj)
-
-            # place it in the "Temp" collection
-            #bpy.context.scene.collection.children["Temp"].objects.link(new_obj)
-
-            # set the location of the object
-            x = A1_POS[0] + SQUARE_SIZE * square_file(square) + random.uniform(-PIECE_PLACEMENT_VARIABILITY, PIECE_PLACEMENT_VARIABILITY) * SQUARE_SIZE 
-            y = A1_POS[1] + SQUARE_SIZE * square_rank(square) + random.uniform(-PIECE_PLACEMENT_VARIABILITY, PIECE_PLACEMENT_VARIABILITY) * SQUARE_SIZE
-            z = PIECE_Z_COORD
-
-            # rotate piece randomly on the z-axis, using its origin as the pivot point
-            new_obj.rotation_euler = (0, 0, random.uniform(0, 2*math.pi))
-
-            new_obj.location = (x, y, z)
-
-
-def render_image(image_name):
-    bpy.context.scene.render.filepath = os.path.join(RENDER_PATH, image_name)
-    bpy.ops.render.render(write_still=True)
-
-def clear_scene():
-    # delete all objects in the "Temp" collection
-    for obj in bpy.data.collections["Temp"].objects:
-        bpy.data.objects.remove(obj)
-
-def render_board(board, board_id):
-    arrange_pieces(board)
-    render_image(f"{board_id}.png")
-    clear_scene()
-
-
-def process_board(board, chess_set, metadata):
-    board_fen = board.board_fen().strip()
-    board_id = hashlib.md5(board_fen.encode()).hexdigest() # Generate a unique ID for the board
-    
-    if board_id in metadata["boards"]:
-        print(f"Board '{board_id}' already in metadata.")
-    else:
-        metadata["boards"][board_id] = {"fen": board_fen, "set": chess_set, "lines": {}}
-    
-    if os.path.exists(os.path.join(RENDER_PATH, f"{board_id}.png")):
-        print(f"Image for board '{board_id}' already exists. Skipping rendering.")
-    else:
-        render_board(board, board_id)
-        print(f"Generated board '{board_id}'.")
-    
-    return board_id
-
-def process_game(pgn_str, metadata):
-    try:
-        game = chess.pgn.read_game(io.StringIO(pgn_str[:-1]))
-    except:
-        return False
-    
-    # Set up the scene once per game, so each game is consistent in terms of lighting and materials
-    chess_set = setup_scene()
-
-    board = Board()
-    prev_board_id = process_board(board, chess_set, metadata)
-    for move in game.mainline_moves():
-        board.push(move)
-        new_board_id = process_board(board, chess_set, metadata)
-
-        # Save the move in the metadata
-        move_str = move.uci()
-
-        if move_str not in metadata["boards"][prev_board_id]["lines"]:
-            metadata["boards"][prev_board_id]["lines"][move_str] = new_board_id
-
-        prev_board_id = new_board_id
-    
-    return True
-
-def generate_base_boards():
-    clear_scene()
-    # For each material whose empty board isn't generated yet, generate it
-    for material in CHESS_SET_MATERIALS:
-        if not os.path.exists(os.path.join(RENDER_PATH, f"empty_board_{material}.png")):
-            print(f"Generating empty board for material '{material}'...")
-            setup_scene(material)
-            render_image(f"empty_board_{material}.png")
-
-def save_metadata(metadata):
-    print("Saving metadata...")
-    with open(METADATA_FILE, "w") as metadata_file:
-        json.dump(metadata, metadata_file, indent=4)
                 
 
 if __name__ == "__main__":
     
-    setup_blender()
+    os.makedirs(RENDER_PATH, exist_ok=True)
+    os.makedirs(PREPROCESS_PATH, exist_ok=True)
 
-    if(os.path.exists(METADATA_FILE)):
-        with open(METADATA_FILE, "r") as metadata_file:
-            metadata = json.load(metadata_file)
-    else:
-        metadata = {"last_batch_end": 0, "boards" : {}}
+    moves = get_moves()
+
+    print(f"Total of {len(moves)} moves found.")
+
+    print("Setting up Blender...")
+
+    rendering.setup_blender()
 
     # Check if base board generation is needed
-    generate_base_boards()
+    base_board_path_match = rendering.generate_base_boards(RENDER_PATH)
 
-    with open(GAMES, "r") as games_file:
-        games = games_file.readlines()[metadata["last_batch_end"]:]
+    chessboard_corners = postprocessing.calibrate_camera(base_board_path_match)
 
-    while metadata["last_batch_end"] < len(games):
-        start = metadata["last_batch_end"]
-        end = min(metadata["last_batch_end"] + BATCH_SIZE, len(games))
-        print(f"Processing game #{start}" if start == end - 1 else f"Processing games {start} to {end - 1}...")
+    if os.path.exists(LAST_PROCESSED_INDEX_FILE):
+        with open(LAST_PROCESSED_INDEX_FILE, "r") as f:
+            last_processed_index = int(f.read())
+    else:
+        last_processed_index = 0
 
-        generated_games = 0
-        for i in range(start, end):
-            if process_game(games[i], metadata):
-                print(f"Processed game {i}.")
-                generated_games += 1
-            else:
-                print(f"PGN of game {i} could not be parsed. Skipping.")
-            
-            if generated_games >= MAX_GEN_GAMES:
-                print("Max games generated. Exiting.")
-                metadata["last_batch_end"] = end
-                save_metadata(metadata)
-                exit(0)
+    i = last_processed_index
 
-        metadata["last_batch_end"] += BATCH_SIZE
-        save_metadata(metadata)
+    while i < len(moves):
+        print(f"Processing move {i}/{len(moves)}...")
+
+        before_fen, move_uci, after_fen = moves[i]
+
+        before_board = Board(before_fen)
+        after_board = Board(after_fen)
+
+        before_board_id = rendering.process_board(before_board, RENDER_PATH)
+        after_board_id = rendering.process_board(after_board, RENDER_PATH)
+
+        postprocessing.process_image(os.path.join(RENDER_PATH, f"{before_board_id}.png"), os.path.join(PREPROCESS_PATH, f"{before_board_id}.png"), chessboard_corners)
+        postprocessing.process_image(os.path.join(RENDER_PATH, f"{after_board_id}.png"), os.path.join(PREPROCESS_PATH, f"{after_board_id}.png"), chessboard_corners)
+
+        if i % BATCH_SIZE == 0:
+
+            with open(LAST_PROCESSED_INDEX_FILE, "w") as f:
+                f.write(str(i))
+
+        i += 1
