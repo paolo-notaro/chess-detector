@@ -17,6 +17,7 @@ PREPROCESS_PATH = os.path.abspath(r"./preprocessed/")
 LAST_PROCESSED_INDEX_FILE = os.path.abspath(r"./last_index.txt")
 
 METADATA_FILE = os.path.abspath(r"./metadata.json")
+ERRORS_FILE = os.path.abspath(r"./errors.txt")
 
 # Generation settings
 BATCH_SIZE = 1 # Entries processed before saving state
@@ -82,15 +83,27 @@ if __name__ == "__main__":
 
         before_fen, move_uci, after_fen = moves[i]
 
-        before_board = Board(before_fen)
-        after_board = Board(after_fen)
+        try:
+            before_board = Board(before_fen)
+            after_board = Board(after_fen)
+        except:
+            with open(ERRORS_FILE, "a") as f:
+                f.write(f"Error parsing FENs: {before_fen}, {after_fen}\n")
+            continue
 
-        before_board_id = rendering.process_board(before_board, RENDER_PATH)
-        after_board_id = rendering.process_board(after_board, RENDER_PATH)
+        try:
+            rendering.setup_scene()
 
-        postprocessing.process_image(os.path.join(RENDER_PATH, f"{before_board_id}.png"), os.path.join(PREPROCESS_PATH, f"{before_board_id}.png"), chessboard_corners)
-        postprocessing.process_image(os.path.join(RENDER_PATH, f"{after_board_id}.png"), os.path.join(PREPROCESS_PATH, f"{after_board_id}.png"), chessboard_corners)
+            before_board_id = rendering.process_board(before_board, RENDER_PATH)
+            after_board_id = rendering.process_board(after_board, RENDER_PATH)
 
+            postprocessing.process_image(os.path.join(RENDER_PATH, f"{before_board_id}.png"), os.path.join(PREPROCESS_PATH, f"{before_board_id}.png"), chessboard_corners)
+            postprocessing.process_image(os.path.join(RENDER_PATH, f"{after_board_id}.png"), os.path.join(PREPROCESS_PATH, f"{after_board_id}.png"), chessboard_corners)
+        except:
+            with open(ERRORS_FILE, "a") as f:
+                f.write(f"Error processing images: {before_fen}, {after_fen}\n")
+            continue
+        
         if i % BATCH_SIZE == 0:
 
             with open(LAST_PROCESSED_INDEX_FILE, "w") as f:

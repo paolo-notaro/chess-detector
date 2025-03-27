@@ -3,6 +3,7 @@ from torch.utils.data import Dataset
 import pandas as pd
 import os
 import cv2
+from dataset import rendering
 
 SQUARES = [f"{file}{rank}" for rank in range(1, 9) for file in "abcdefgh"]
 SQUARE_TO_IDX = {sq: i for i, sq in enumerate(SQUARES)}
@@ -11,7 +12,7 @@ PROMOTION_TO_IDX = {"": 0, "q": 1, "r": 2, "b": 3, "n": 4}
 class ChessMoveDatasetFromCSV(Dataset):
     def __init__(self, csv_path, image_dir):
         """
-        csv_path: path to CSV with columns: before_id, after_id, move_uci
+        csv_path: path to CSV with columns: before_fen, move_uci, after_fen
         image_dir: path to directory with preprocessed .png files (224x224 grayscale)
         """
         self.df = pd.read_csv(csv_path)
@@ -29,9 +30,9 @@ class ChessMoveDatasetFromCSV(Dataset):
 
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
-        before_id = row["before_id"]
-        after_id = row["after_id"]
+        before_id = rendering.get_board_id(row["before_fen"])
         move_uci = row["move_uci"]
+        after_id = rendering.get_board_id(row["after_fen"])
 
         before_tensor = self._load_image(before_id)
         after_tensor = self._load_image(after_id)
@@ -47,14 +48,3 @@ class ChessMoveDatasetFromCSV(Dataset):
         }
 
         return before_tensor, after_tensor, label
-
-# Sanity check
-
-if __name__ == '__main__':
-    dataset = ChessMoveDatasetFromCSV("dataset/entries.csv", "dataset/preprocessed")
-
-    before, after, label = dataset[0]
-
-    print(before.shape, after.shape)
-
-    print([elem.shape for (key, elem) in label.items()])

@@ -6,3 +6,5 @@ opencv-python
 torch
 pandas
 tqdm
+torchvision
+torchaudio

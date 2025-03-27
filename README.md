@@ -10,7 +10,7 @@ Yet another chess-detection project
 
 Install requirements via
 
-    pip install -r requirements.txt
+    pip install -r requirements.txt --index-url https://download.pytorch.org/whl/cu118
 
 ## 2. Dataset generation
 

@@ -1,9 +1,17 @@
 import models
 import torch
-import dataset
+from dataset import dataset
 from tqdm import tqdm
+import csv
+import os 
+import random
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+num_epochs = 100000
+resume = True
+
+train_eval_ratio = 0.8
 
 if device.type == "cpu":
     print("Warning: CUDA not available, using CPU...")
@@ -113,6 +121,37 @@ def load_checkpoint(model, optimizer, path="checkpoint.pth", device='cpu'):
     return start_epoch
 
 
+if not os.path.exists("dataset/preprocessed") or not os.path.exists("dataset/last_index.txt"):
+    print("Preprocessed dataset not found, please run dataset/gen_dataset.py first")
+    exit()
+
+
+if not os.path.exists("dataset/entries_train.csv") or not os.path.exists("dataset/entries_eval.csv"):
+    with open("dataset/last_index.txt", "r") as f:
+        last_index = int(f.read())
+
+    with open("dataset/entries.csv", "r") as f:
+        entries = list(csv.reader(f))[1:last_index + 1]
+    
+    print(f"Total of {len(entries)} moves found. Splitting dataset with a ratio of {train_eval_ratio}...")
+
+    random.shuffle(entries)
+
+    split_index = int(len(entries) * train_eval_ratio)
+
+
+    with open("dataset/entries_train.csv", "w", newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(["before_fen", "move_uci", "after_fen"])
+        writer.writerows(entries[:split_index])
+    
+    with open("dataset/entries_eval.csv", "w", newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(["before_fen", "move_uci", "after_fen"])
+        writer.writerows(entries[split_index:])
+
+
+
 model = models.ChessMovePredictor().to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 
@@ -127,9 +166,6 @@ print(f"Train batches per epoch: {len(train_loader)}")
 
 print(f"Val dataset size: {len(val_dataset)}")
 print(f"Val batches per epoch: {len(val_loader)}")
-
-num_epochs = 100000
-resume = False
 
 if resume:
     start_epoch = load_checkpoint(model, optimizer, path="checkpoint.pth", device=device)

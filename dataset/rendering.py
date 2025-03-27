@@ -182,8 +182,9 @@ def render_board(board, path, board_id):
     render_image(path, f"{board_id}.png")
     clear_scene()
 
-def get_board_id(board : Board):
-    return board.board_fen().replace("/", "_")
+def get_board_id(board : Board | str):
+    board_fen = board.board_fen() if isinstance(board, Board) else board
+    return board_fen.strip().replace("/", "_")
 
 def process_board(board, path):
     board_id = get_board_id(board)

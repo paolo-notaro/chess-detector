@@ -183,5 +183,10 @@ dataset/images/*
 dataset/preprocessed
 dataset/preprocessed/*
 dataset/metadata.json
+dataset/last_index.txt
 *.zst
 *.pgn
+entries*.csv
+
+# Model checkpoints
+*.pth
