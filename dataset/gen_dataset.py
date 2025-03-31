@@ -22,8 +22,9 @@ ERRORS_FILE = os.path.abspath(r"./errors.txt")
 # Generation settings
 BATCH_SIZE = 1 # Entries processed before saving state
 
-def get_moves():
-    if not os.path.exists(MOVES):
+DELETE_RENDERED = True # Delete rendered images after processing
+
+def download_and_select_moves():
         download.download_from_lichess(name = "lichess_db_standard_rated_2016-03", output_path = "lichess_truncated.pgn", keep_n = 10000)
         sorted_moves = analysis.analyze_games("lichess_truncated.pgn")
         print(f"Total of {sorted_moves['total']} moves found. What % of moves should we keep (out of 100)?")
@@ -41,11 +42,26 @@ def get_moves():
         print("Shuffling moves...")
         random.shuffle(moves)
 
+        return moves
+
+def get_moves():
+    if not os.path.exists(MOVES):
+        moves = download_and_select_moves()
+
         print("Saving moves...")
         with open(MOVES, "w") as moves_file:
             moves_file.write("before_fen,move_uci,after_fen\n")
             for before_id, move, after_id in moves:
                 moves_file.write(f"{before_id},{move},{after_id}\n")
+    
+    else:
+        print("An entries.csv file already exists. Do you want to append to it? (y/n)")
+        typed = input()
+        if typed == "y":
+            moves = download_and_select_moves()
+            with open(MOVES, "a") as moves_file:
+                for before_id, move, after_id in moves:
+                    moves_file.write(f"{before_id},{move},{after_id}\n")
 
     with open(MOVES, "r") as moves_file:
         return list(csv.reader(moves_file))[1:]
@@ -94,19 +110,36 @@ if __name__ == "__main__":
         try:
             rendering.setup_scene()
 
-            before_board_id = rendering.process_board(before_board, RENDER_PATH)
-            after_board_id = rendering.process_board(after_board, RENDER_PATH)
+            before_board_id = rendering.get_board_id(before_board)
+            after_board_id = rendering.get_board_id(after_board)
 
-            postprocessing.process_image(os.path.join(RENDER_PATH, f"{before_board_id}.png"), os.path.join(PREPROCESS_PATH, f"{before_board_id}.png"), chessboard_corners)
-            postprocessing.process_image(os.path.join(RENDER_PATH, f"{after_board_id}.png"), os.path.join(PREPROCESS_PATH, f"{after_board_id}.png"), chessboard_corners)
+            if not os.path.exists(os.path.join(PREPROCESS_PATH, f"{before_board_id}.png")):
+                before_board_id = rendering.process_board(before_board, RENDER_PATH)
+                postprocessing.process_image(os.path.join(RENDER_PATH, f"{before_board_id}.png"), os.path.join(PREPROCESS_PATH, f"{before_board_id}.png"), chessboard_corners)
+
+                if DELETE_RENDERED:
+                    os.remove(os.path.join(RENDER_PATH, f"{before_board_id}.png"))
+
+            else:
+                print(f"Processed image already exists: {before_board_id}.png")
+
+            if not os.path.exists(os.path.join(PREPROCESS_PATH, f"{after_board_id}.png")):
+                after_board_id = rendering.process_board(after_board, RENDER_PATH)
+                postprocessing.process_image(os.path.join(RENDER_PATH, f"{after_board_id}.png"), os.path.join(PREPROCESS_PATH, f"{after_board_id}.png"), chessboard_corners)
+            
+                if DELETE_RENDERED:
+                    os.remove(os.path.join(RENDER_PATH, f"{after_board_id}.png"))
+
+            else:
+                print(f"Processed image already exists: {after_board_id}.png")
         except:
             with open(ERRORS_FILE, "a") as f:
                 f.write(f"Error processing images: {before_fen}, {after_fen}\n")
+        finally:
+            if i % BATCH_SIZE == 0:
+
+                with open(LAST_PROCESSED_INDEX_FILE, "w") as f:
+                    f.write(str(i))
+
+            i += 1
             continue
-        
-        if i % BATCH_SIZE == 0:
-
-            with open(LAST_PROCESSED_INDEX_FILE, "w") as f:
-                f.write(str(i))
-
-        i += 1
