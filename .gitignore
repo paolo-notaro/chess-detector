@@ -179,6 +179,7 @@ cython_debug/
 
 # Large dataset files
 dataset/images
+dataset/images_*
 dataset/images/*
 dataset/preprocessed
 dataset/preprocessed/*
@@ -190,3 +191,7 @@ entries*.csv
 
 # Model checkpoints
 *.pth
+models
+
+# mlflow
+mlruns

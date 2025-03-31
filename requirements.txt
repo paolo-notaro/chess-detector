@@ -8,3 +8,6 @@ pandas
 tqdm
 torchvision
 torchaudio
+mlflow
+isort
+black
