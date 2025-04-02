@@ -14,6 +14,7 @@ MOVES = r"entries.csv"
 # File paths
 RENDER_PATH = os.path.abspath(r"./images/")
 PREPROCESS_PATH = os.path.abspath(r"./preprocessed/")
+DIFF_PATH = os.path.abspath(r"./diff/")
 LAST_PROCESSED_INDEX_FILE = os.path.abspath(r"./last_index.txt")
 
 METADATA_FILE = os.path.abspath(r"./metadata.json")
@@ -23,6 +24,7 @@ ERRORS_FILE = os.path.abspath(r"./errors.txt")
 BATCH_SIZE = 1 # Entries processed before saving state
 
 DELETE_RENDERED = True # Delete rendered images after processing
+GEN_DIFF = True # Generate diff images
 
 def download_and_select_moves():
         download.download_from_lichess(name = "lichess_db_standard_rated_2016-03", output_path = "lichess_truncated.pgn", keep_n = 10000)
@@ -73,6 +75,9 @@ if __name__ == "__main__":
     os.makedirs(RENDER_PATH, exist_ok=True)
     os.makedirs(PREPROCESS_PATH, exist_ok=True)
 
+    if GEN_DIFF:
+        os.makedirs(DIFF_PATH, exist_ok=True)
+
     moves = get_moves()
 
     print(f"Total of {len(moves)} moves found.")
@@ -113,9 +118,13 @@ if __name__ == "__main__":
             before_board_id = rendering.get_board_id(before_board)
             after_board_id = rendering.get_board_id(after_board)
 
+            piece_placement_variability = rendering.gen_piece_placement_variability()
+
             if not os.path.exists(os.path.join(PREPROCESS_PATH, f"{before_board_id}.png")):
-                before_board_id = rendering.process_board(before_board, RENDER_PATH)
-                postprocessing.process_image(os.path.join(RENDER_PATH, f"{before_board_id}.png"), os.path.join(PREPROCESS_PATH, f"{before_board_id}.png"), chessboard_corners)
+                before_board_id = rendering.process_board(before_board, RENDER_PATH, piece_placement_variability)
+                before_img = postprocessing.process_image(os.path.join(RENDER_PATH, f"{before_board_id}.png"), chessboard_corners)
+
+                postprocessing.save_image(before_img, os.path.join(PREPROCESS_PATH, f"{before_board_id}.png"))
 
                 if DELETE_RENDERED:
                     os.remove(os.path.join(RENDER_PATH, f"{before_board_id}.png"))
@@ -124,17 +133,26 @@ if __name__ == "__main__":
                 print(f"Processed image already exists: {before_board_id}.png")
 
             if not os.path.exists(os.path.join(PREPROCESS_PATH, f"{after_board_id}.png")):
-                after_board_id = rendering.process_board(after_board, RENDER_PATH)
-                postprocessing.process_image(os.path.join(RENDER_PATH, f"{after_board_id}.png"), os.path.join(PREPROCESS_PATH, f"{after_board_id}.png"), chessboard_corners)
-            
+                after_board_id = rendering.process_board(after_board, RENDER_PATH, piece_placement_variability)
+                
+                after_img = postprocessing.process_image(os.path.join(RENDER_PATH, f"{after_board_id}.png"), chessboard_corners)
+                
+                postprocessing.save_image(after_img, os.path.join(PREPROCESS_PATH, f"{after_board_id}.png"))
+
                 if DELETE_RENDERED:
                     os.remove(os.path.join(RENDER_PATH, f"{after_board_id}.png"))
 
             else:
                 print(f"Processed image already exists: {after_board_id}.png")
-        except:
+
+            if GEN_DIFF:
+                diff_img = postprocessing.gen_diff(before_img, after_img)
+                postprocessing.save_image(diff_img, os.path.join(DIFF_PATH, f"{i}.png"))
+                print(f"Diff image saved: {i}_diff.png")
+
+        except Exception as e:
             with open(ERRORS_FILE, "a") as f:
-                f.write(f"Error processing images: {before_fen}, {after_fen}\n")
+                f.write(f"Error processing images: {before_fen}, {after_fen}: {e.__class__}\n")
         finally:
             if i % BATCH_SIZE == 0:
 

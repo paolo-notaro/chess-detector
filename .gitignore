@@ -181,7 +181,9 @@ cython_debug/
 dataset/images
 dataset/images_*
 dataset/images/*
+dataset/diff/*
 dataset/preprocessed
+dataset/preprocessed_*
 dataset/preprocessed/*
 dataset/metadata.json
 dataset/last_index.txt

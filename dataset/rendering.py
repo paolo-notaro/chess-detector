@@ -136,13 +136,25 @@ def setup_scene(chess_set = None):
 
     return chess_set
 
+def gen_piece_placement_variability():
+    """ Generates a 64x64 matrix of tuples of three items (x placement variability, y placement variability, rotation variability).
+        X and Y placement variability are in the range [-PIECE_PLACEMENT_VARIABILITY, PIECE_PLACEMENT_VARIABILITY].
+        Rotation variability is in the range [0, 2*PI].
+       """
+    piece_placement_variability = [[(random.uniform(-PIECE_PLACEMENT_VARIABILITY, PIECE_PLACEMENT_VARIABILITY), random.uniform(-PIECE_PLACEMENT_VARIABILITY, PIECE_PLACEMENT_VARIABILITY), random.uniform(0, 2*math.pi)) for _ in range(8)] for _ in range(8)]
+    return piece_placement_variability
 
+def arrange_pieces(board : Board, piece_placement_variability = None):
+    """ Arranges the pieces on the board according to the given board state. """
+    if piece_placement_variability is None:
+        piece_placement_variability = gen_piece_placement_variability()
 
-def arrange_pieces(board : Board):
     for square in SQUARES:
         piece = board.piece_at(square)
         if piece is not None:
             piece_obj = bpy.data.objects[PIECES_OBJ_NAMES[piece.symbol()]]
+
+            x_variability, y_variability, rot_variability = piece_placement_variability[square_rank(square)][square_file(square)] 
 
             # duplicate the object
             new_obj = piece_obj.copy()
@@ -153,12 +165,12 @@ def arrange_pieces(board : Board):
             #bpy.context.scene.collection.children["Temp"].objects.link(new_obj)
 
             # set the location of the object
-            x = A1_POS[0] + SQUARE_SIZE * square_file(square) + random.uniform(-PIECE_PLACEMENT_VARIABILITY, PIECE_PLACEMENT_VARIABILITY) * SQUARE_SIZE 
-            y = A1_POS[1] + SQUARE_SIZE * square_rank(square) + random.uniform(-PIECE_PLACEMENT_VARIABILITY, PIECE_PLACEMENT_VARIABILITY) * SQUARE_SIZE
+            x = A1_POS[0] + SQUARE_SIZE * square_file(square) + x_variability * SQUARE_SIZE
+            y = A1_POS[1] + SQUARE_SIZE * square_rank(square) + y_variability * SQUARE_SIZE
             z = PIECE_Z_COORD
 
             # rotate piece randomly on the z-axis, using its origin as the pivot point
-            new_obj.rotation_euler = (0, 0, random.uniform(0, 2*math.pi))
+            new_obj.rotation_euler = (0, 0, rot_variability)
 
             new_obj.location = (x, y, z)
 
@@ -177,8 +189,8 @@ def clear_scene():
     for obj in bpy.data.collections["Temp"].objects:
         bpy.data.objects.remove(obj)
 
-def render_board(board, path, board_id):
-    arrange_pieces(board)
+def render_board(board, path, board_id, piece_placement_variability = None):
+    arrange_pieces(board, piece_placement_variability)
     render_image(path, f"{board_id}.png")
     clear_scene()
 
@@ -186,7 +198,7 @@ def get_board_id(board : Board | str):
     board_fen = board.board_fen() if isinstance(board, Board) else board
     return board_fen.strip().replace("/", "_")
 
-def process_board(board, path):
+def process_board(board, path, piece_placement_variability = None):
     board_id = get_board_id(board)
     
     filepath = os.path.join(path, f"{board_id}.png")
@@ -194,7 +206,7 @@ def process_board(board, path):
     if os.path.exists(filepath):
         print(f"Image for board '{board_id}' already exists. Skipping rendering.")
     else:
-        render_board(board, path, board_id)
+        render_board(board, path, board_id, piece_placement_variability)
         print(f"Generated board '{board_id}'.")
     
     return board_id

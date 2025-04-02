@@ -98,11 +98,29 @@ def rectify_board(img, corners, size=224):
 
     return warped
 
-def process_image(frompath, topath, chessboard_corners):
+def gen_diff(before_img, after_img, binary=False, binary_threshold=30):
+    """
+    Generate a difference image between before and after images.
+
+    Parameters:
+        before_img: Before image (grayscale or BGR)
+        after_img: After image (grayscale or BGR)"
+    """
+    diff_img = cv.absdiff(before_img, after_img)
+
+    if binary:
+        _, diff_img_binary = cv.threshold(diff_img, binary_threshold, 255, cv.THRESH_BINARY)
+        return diff_img_binary
+    else:
+        return diff_img
+
+def process_image(frompath, chessboard_corners):
     img = cv.imread(frompath)
 
     img = rectify_board(img, chessboard_corners)
 
-    cv.imwrite(topath, img * 255.0)
+    return img
 
-    print(f"Image {frompath} processed.")
+def save_image(img, topath):
+    cv.imwrite(topath, img * 255.0)
+    print(f"Image {topath} saved.")
