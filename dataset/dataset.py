@@ -48,3 +48,60 @@ class ChessMoveDatasetFromCSV(Dataset):
         }
 
         return before_tensor, after_tensor, label
+
+
+class ChessMoveFromDiffDataset(Dataset):
+    """
+    Dataset for moves from diff images.
+    Each image is a 224x224 grayscale diff image, representing a move.
+    The image is split into 64 patches (8x8 grid), and each patch is encoded as a 32x32 tensor.
+    The output is a tensor of shape (64, 1, 32, 32) representing the board as a sequence of patches.
+    """
+
+    def __init__(self, csv_path, diff_images_dir, limit=None):
+        """
+        csv_path: path to CSV with columns: image_id, move_uci
+        image_id: ID of the diff image (0.png, 1.png, ...)
+        diff_images_dir: path to directory with diff images (224x224 grayscale)
+        """
+        self.df = pd.read_csv(csv_path, nrows=limit)
+        self.diff_images_dir = diff_images_dir
+
+    def __len__(self):
+        return len(self.df)
+
+    def _load_image(self, i):
+        path = os.path.join(self.diff_images_dir, f"{i}.png")
+        img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+        img = cv2.resize(img, (224, 224)) if img.shape != (224, 224) else img
+        img = img.astype('float32') / 255.0
+
+        # Split into 64 (32x32) patches
+        patches = []
+        for row in range(0, 224, 28):
+            for col in range(0, 224, 28):
+                patch = img[row:row+28, col:col+28]
+                patch = cv2.resize(patch, (32, 32))  # Standardize to 32x32
+                patch = torch.tensor(patch, dtype=torch.float32).unsqueeze(0)  # (1, 32, 32)
+                patches.append(patch)
+
+        patches_tensor = torch.stack(patches)  # (64, 1, 32, 32)
+        return patches_tensor
+
+    def __getitem__(self, index):
+        row = self.df.iloc[index]
+        move_uci = row["move_uci"]
+
+        diff_tensor = self._load_image(index)
+
+        from_sq = move_uci[0:2]
+        to_sq = move_uci[2:4]
+        promo = move_uci[4:] if len(move_uci) > 4 else ""
+
+        label = {
+            "from": torch.tensor(SQUARE_TO_IDX[from_sq], dtype=torch.long),
+            "to": torch.tensor(SQUARE_TO_IDX[to_sq], dtype=torch.long),
+            "promotion": torch.tensor(PROMOTION_TO_IDX.get(promo, 0), dtype=torch.long)
+        }
+
+        return diff_tensor, label

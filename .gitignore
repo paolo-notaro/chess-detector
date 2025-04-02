@@ -189,7 +189,9 @@ dataset/metadata.json
 dataset/last_index.txt
 *.zst
 *.pgn
+diff_entries*.csv
 entries*.csv
+errors.txt
 
 # Model checkpoints
 *.pth

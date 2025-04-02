@@ -26,6 +26,8 @@ BATCH_SIZE = 1 # Entries processed before saving state
 DELETE_RENDERED = True # Delete rendered images after processing
 GEN_DIFF = True # Generate diff images
 
+SUPPRESS_BLENDER_OUTPUT = False # Suppress Blender output
+
 def download_and_select_moves():
         download.download_from_lichess(name = "lichess_db_standard_rated_2016-03", output_path = "lichess_truncated.pgn", keep_n = 10000)
         sorted_moves = analysis.analyze_games("lichess_truncated.pgn")
@@ -121,7 +123,7 @@ if __name__ == "__main__":
             piece_placement_variability = rendering.gen_piece_placement_variability()
 
             if not os.path.exists(os.path.join(PREPROCESS_PATH, f"{before_board_id}.png")):
-                before_board_id = rendering.process_board(before_board, RENDER_PATH, piece_placement_variability)
+                before_board_id = rendering.process_board(before_board, RENDER_PATH, piece_placement_variability, suppress_output=SUPPRESS_BLENDER_OUTPUT)
                 before_img = postprocessing.process_image(os.path.join(RENDER_PATH, f"{before_board_id}.png"), chessboard_corners)
 
                 postprocessing.save_image(before_img, os.path.join(PREPROCESS_PATH, f"{before_board_id}.png"))
@@ -133,7 +135,7 @@ if __name__ == "__main__":
                 print(f"Processed image already exists: {before_board_id}.png")
 
             if not os.path.exists(os.path.join(PREPROCESS_PATH, f"{after_board_id}.png")):
-                after_board_id = rendering.process_board(after_board, RENDER_PATH, piece_placement_variability)
+                after_board_id = rendering.process_board(after_board, RENDER_PATH, piece_placement_variability, suppress_output=SUPPRESS_BLENDER_OUTPUT)
                 
                 after_img = postprocessing.process_image(os.path.join(RENDER_PATH, f"{after_board_id}.png"), chessboard_corners)
                 

@@ -189,16 +189,16 @@ def clear_scene():
     for obj in bpy.data.collections["Temp"].objects:
         bpy.data.objects.remove(obj)
 
-def render_board(board, path, board_id, piece_placement_variability = None):
+def render_board(board, path, board_id, piece_placement_variability = None, suppress_output = True):
     arrange_pieces(board, piece_placement_variability)
-    render_image(path, f"{board_id}.png")
+    render_image(path, f"{board_id}.png", suppress_output=suppress_output)
     clear_scene()
 
 def get_board_id(board : Board | str):
     board_fen = board.board_fen() if isinstance(board, Board) else board
     return board_fen.strip().replace("/", "_")
 
-def process_board(board, path, piece_placement_variability = None):
+def process_board(board, path, piece_placement_variability = None, suppress_output = True):
     board_id = get_board_id(board)
     
     filepath = os.path.join(path, f"{board_id}.png")
@@ -206,7 +206,7 @@ def process_board(board, path, piece_placement_variability = None):
     if os.path.exists(filepath):
         print(f"Image for board '{board_id}' already exists. Skipping rendering.")
     else:
-        render_board(board, path, board_id, piece_placement_variability)
+        render_board(board, path, board_id, piece_placement_variability, suppress_output=suppress_output)
         print(f"Generated board '{board_id}'.")
     
     return board_id

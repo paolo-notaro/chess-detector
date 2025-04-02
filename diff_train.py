@@ -1,4 +1,5 @@
-from image_pairs_models import SmallCNNEncoder, MidCNNEncoder, ChessMovePredictor, count_params
+from diff_models import ChessMoveModel
+from image_pairs_models import count_params
 import torch
 from dataset import dataset
 from tqdm import tqdm
@@ -12,6 +13,11 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 num_epochs = 100000
 checkpoint_to_load = None  # "models/checkpoint_hilarious-doe-40_epoch1.pth" or None
 
+LEARNING_RATE = 1e-4
+EMBED_DIM = 256
+BATCH_SIZE = 32
+LIMIT_DATASET = None  # None for no limit, otherwise set to the number of samples to use. To test if overfitting works
+
 train_eval_ratio = 0.8
 
 if device.type == "cpu":
@@ -22,89 +28,86 @@ else:
 
 criterion = torch.nn.CrossEntropyLoss()
 
-
 def train(model, dataloader, optimizer, device):
     model.train()
     total_loss = 0
-    correct_from = correct_to = correct_promo = 0
+    correct = 0
     total = 0
 
-    for before, after, label in tqdm(dataloader):
-        before = before.to(device)
-        after = after.to(device)
+    for patch_tensor, label in tqdm(dataloader):
+        patch_tensor = patch_tensor.to(device)  # shape: (B, 64, 1, 32, 32)
+        B = patch_tensor.size(0)  # batch size
         y_from = label["from"].to(device)
         y_to = label["to"].to(device)
-        y_promo = label["promotion"].to(device)
 
         optimizer.zero_grad()
-        out_from, out_to, out_promo = model(before, after)
+        scores = model(patch_tensor)  # [B, 64, 64], batch size, from square, to square
 
-        loss_from = criterion(out_from, y_from)
-        loss_to = criterion(out_to, y_to)
-        loss_promo = criterion(out_promo, y_promo)
-        loss = loss_from + loss_to + loss_promo
+        scores_flat = scores.view(B, -1)  # [B, 4096]
+
+        # Flatten (from, to) into single label
+        move_idx = y_from * 64 + y_to  # [B]
+
+        # Compute loss
+        loss = criterion(scores_flat, move_idx)
 
         loss.backward()
         optimizer.step()
 
-        total_loss += loss.item() * before.size(0)
-        total += before.size(0)
+        total_loss += loss.item() * B
+        total += patch_tensor.size(0)
 
         # Accuracy metrics
-        pred_from = out_from.argmax(dim=1)
-        pred_to = out_to.argmax(dim=1)
-        pred_promo = out_promo.argmax(dim=1)
+        pred_move_idx = scores.view(B, -1).argmax(dim=1)  # predicted flat index
+        true_move_idx = y_from * 64 + y_to
 
-        correct_from += (pred_from == y_from).sum().item()
-        correct_to += (pred_to == y_to).sum().item()
-        correct_promo += (pred_promo == y_promo).sum().item()
+        correct += (pred_move_idx == true_move_idx).sum().item()
+
 
     avg_loss = total_loss / total
-    acc_from = correct_from / total
-    acc_to = correct_to / total
-    acc_promo = correct_promo / total
+    acc = correct / total
 
-    return avg_loss, acc_from, acc_to, acc_promo
+    return avg_loss, acc
 
 
 def evaluate(model, dataloader, device):
     model.eval()
     total_loss = 0
-    correct_from = correct_to = correct_promo = 0
+    correct = 0
     total = 0
 
     with torch.no_grad():
-        for before, after, label in dataloader:
-            before = before.to(device)
-            after = after.to(device)
+        for patch_tensor, label in dataloader:
+            B = patch_tensor.size(0)  # batch size
+            patch_tensor = patch_tensor.to(device)
             y_from = label["from"].to(device)
             y_to = label["to"].to(device)
-            y_promo = label["promotion"].to(device)
 
-            out_from, out_to, out_promo = model(before, after)
+            scores = model(patch_tensor)
+            
+            scores_flat = scores.view(B, -1)  # [B, 4096]
 
-            loss_from = criterion(out_from, y_from)
-            loss_to = criterion(out_to, y_to)
-            loss_promo = criterion(out_promo, y_promo)
-            loss = loss_from + loss_to + loss_promo
+            # Flatten (from, to) into single label
+            move_idx = y_from * 64 + y_to  # [B]
 
-            total_loss += loss.item() * before.size(0)
-            total += before.size(0)
+            loss = criterion(scores_flat, move_idx)
 
-            pred_from = out_from.argmax(dim=1)
-            pred_to = out_to.argmax(dim=1)
-            pred_promo = out_promo.argmax(dim=1)
+            # Compute loss
+            total_loss += loss.item() * B
+            total += B
 
-            correct_from += (pred_from == y_from).sum().item()
-            correct_to += (pred_to == y_to).sum().item()
-            correct_promo += (pred_promo == y_promo).sum().item()
+            # Accuracy metrics
+            pred_move_idx = scores.view(B, -1).argmax(dim=1)  # predicted flat index
+            true_move_idx = y_from * 64 + y_to
+
+            correct += (pred_move_idx == true_move_idx).sum().item()
+            
 
     avg_loss = total_loss / total
-    acc_from = correct_from / total
-    acc_to = correct_to / total
-    acc_promo = correct_promo / total
+    acc = correct / total
 
-    return avg_loss, acc_from, acc_to, acc_promo
+    return avg_loss, acc
+
 
 
 def save_checkpoint(
@@ -139,15 +142,14 @@ if not os.path.exists("dataset/preprocessed") or not os.path.exists(
     exit()
 
 
-if not os.path.exists("dataset/entries_train.csv") or not os.path.exists(
-    "dataset/entries_eval.csv"
+if not os.path.exists("dataset/diff_entries_train.csv") or not os.path.exists(
+    "dataset/diff_entries_eval.csv"
 ):
     with open("dataset/last_index.txt", "r") as f:
         last_index = int(f.read())
 
     with open("dataset/entries.csv", "r") as f:
-        entries = list(csv.reader(f))[1 : last_index + 1]
-
+        entries = [(i, row[1]) for i, row in enumerate(list(csv.reader(f))[1:last_index + 1])] # skip header
     print(
         f"Total of {len(entries)} moves found. Splitting dataset with a ratio of {train_eval_ratio}..."
     )
@@ -156,14 +158,14 @@ if not os.path.exists("dataset/entries_train.csv") or not os.path.exists(
 
     split_index = int(len(entries) * train_eval_ratio)
 
-    with open("dataset/entries_train.csv", "w", newline="") as f:
+    with open("dataset/diff_entries_train.csv", "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["before_fen", "move_uci", "after_fen"])
+        writer.writerow(["id", "move_uci"])
         writer.writerows(entries[:split_index])
 
-    with open("dataset/entries_eval.csv", "w", newline="") as f:
+    with open("dataset/diff_entries_eval.csv", "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["before_fen", "move_uci", "after_fen"])
+        writer.writerow(["id", "move_uci"])
         writer.writerows(entries[split_index:])
 
 
@@ -180,28 +182,34 @@ with mlflow.start_run() as run:
     # Log hyperparameters
     mlflow.log_param("num_epochs", num_epochs)
     mlflow.log_param("train_eval_ratio", train_eval_ratio)
-    mlflow.log_param("learning_rate", 1e-4)
-    mlflow.log_param("batch_size", 32)
+    mlflow.log_param("learning_rate", LEARNING_RATE)
+    mlflow.log_param("batch_size", BATCH_SIZE)
     mlflow.log_param("checkpoint_to_reload", checkpoint_to_load)
     mlflow.log_param("device", device.type)
+    mlflow.log_param("starting_checkpoint", checkpoint_to_load)
+    mlflow.log_param("model", "ChessMoveModel")
+    mlflow.log_param("embed_dim", EMBED_DIM)
 
-    model = ChessMovePredictor(encoder_class=SmallCNNEncoder).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    model = ChessMoveModel(embed_dim=EMBED_DIM).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
-    print(f"Total parameters: {count_params(model, trainable_only=False)}")
-    print(f"Trainable parameters: {count_params(model, trainable_only=True)}")
+    tot_params = count_params(model, trainable_only=False)
+    trainable_params = count_params(model, trainable_only=True)
 
-    train_dataset = dataset.ChessMoveDatasetFromCSV(
-        "dataset/entries_train.csv", "dataset/preprocessed"
+    mlflow.log_param("total_params", tot_params)
+    mlflow.log_param("trainable_params", trainable_params)
+
+    train_dataset = dataset.ChessMoveFromDiffDataset(
+        "dataset/diff_entries_train.csv", "dataset/diff", limit=LIMIT_DATASET
     )
-    val_dataset = dataset.ChessMoveDatasetFromCSV(
-        "dataset/entries_eval.csv", "dataset/preprocessed"
+    val_dataset = dataset.ChessMoveFromDiffDataset(
+        "dataset/diff_entries_eval.csv", "dataset/diff", limit=LIMIT_DATASET
     )
 
     train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=32, shuffle=True
+        train_dataset, batch_size=BATCH_SIZE, shuffle=True
     )
-    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=32, shuffle=False)
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
     print(f"Train dataset size: {len(train_dataset)}")
     print(f"Train batches per epoch: {len(train_loader)}")
@@ -217,33 +225,29 @@ with mlflow.start_run() as run:
         start_epoch, best_val_loss = 0, float("inf")
 
     for epoch in range(num_epochs):
-        train_loss, train_acc_from, train_acc_to, train_acc_promo = train(
+        train_loss, train_acc = train(
             model, train_loader, optimizer, device
         )
 
-        val_loss, val_acc_from, val_acc_to, val_acc_promo = evaluate(
+        val_loss, val_acc = evaluate(
             model, val_loader, device
         )
 
         print(f"[Epoch {epoch+1}]")
         print(
-            f" Train Loss: {train_loss:.4f} | From: {train_acc_from:.2%}, To: {train_acc_to:.2%}, Promo: {train_acc_promo:.2%}"
+            f" Train Loss: {train_loss:.4f} | Acc: {train_acc:.2%}"
         )
         print(
-            f" Val   Loss: {val_loss:.4f} | From: {val_acc_from:.2%}, To: {val_acc_to:.2%}, Promo: {val_acc_promo:.2%}"
+            f" Val   Loss: {val_loss:.4f} | Acc: {val_acc:.2%}"
         )
 
         # Log metrics
         mlflow.log_metrics(
             {
                 "train_loss": train_loss,
-                "train_acc_from": train_acc_from,
-                "train_acc_to": train_acc_to,
-                "train_acc_promo": train_acc_promo,
+                "train_acc": train_acc,
                 "val_loss": val_loss,
-                "val_acc_from": val_acc_from,
-                "val_acc_to": val_acc_to,
-                "val_acc_promo": val_acc_promo,
+                "val_acc_": val_acc,
             },
             step=epoch + 1,
         )
