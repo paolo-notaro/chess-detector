@@ -11,10 +11,10 @@ import mlflow
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 num_epochs = 100000
-checkpoint_to_load = None  # "models/checkpoint_hilarious-doe-40_epoch1.pth" or None
+checkpoint_to_load = "models\checkpoint_clumsy-mole-932_epoch8.pth"  # "models/checkpoint_hilarious-doe-40_epoch1.pth" or None
 
 LEARNING_RATE = 1e-4
-EMBED_DIM = 256
+EMBED_DIM = 128
 BATCH_SIZE = 32
 LIMIT_DATASET = None  # None for no limit, otherwise set to the number of samples to use. To test if overfitting works
 
@@ -27,6 +27,7 @@ else:
 
 
 criterion = torch.nn.CrossEntropyLoss()
+
 
 def train(model, dataloader, optimizer, device):
     model.train()
@@ -63,7 +64,6 @@ def train(model, dataloader, optimizer, device):
 
         correct += (pred_move_idx == true_move_idx).sum().item()
 
-
     avg_loss = total_loss / total
     acc = correct / total
 
@@ -84,7 +84,7 @@ def evaluate(model, dataloader, device):
             y_to = label["to"].to(device)
 
             scores = model(patch_tensor)
-            
+
             scores_flat = scores.view(B, -1)  # [B, 4096]
 
             # Flatten (from, to) into single label
@@ -101,13 +101,11 @@ def evaluate(model, dataloader, device):
             true_move_idx = y_from * 64 + y_to
 
             correct += (pred_move_idx == true_move_idx).sum().item()
-            
 
     avg_loss = total_loss / total
     acc = correct / total
 
     return avg_loss, acc
-
 
 
 def save_checkpoint(
@@ -149,7 +147,11 @@ if not os.path.exists("dataset/diff_entries_train.csv") or not os.path.exists(
         last_index = int(f.read())
 
     with open("dataset/entries.csv", "r") as f:
-        entries = [(i, row[1]) for i, row in enumerate(list(csv.reader(f))[1:last_index + 1])] # skip header
+        entries = [
+            (i, row[1])
+            for i, row in enumerate(list(csv.reader(f))[1 : last_index + 1])
+            if os.path.exists(os.path.join("dataset/diff", str(i) + ".png"))
+        ]  # skip header
     print(
         f"Total of {len(entries)} moves found. Splitting dataset with a ratio of {train_eval_ratio}..."
     )
@@ -178,6 +180,8 @@ with mlflow.start_run() as run:
     run_name = run.data.tags.get(
         "mlflow.runName", run_id
     )  # fallback to run_id if name not set
+
+    print(f"Run name: {run_name}")
 
     # Log hyperparameters
     mlflow.log_param("num_epochs", num_epochs)
@@ -209,7 +213,9 @@ with mlflow.start_run() as run:
     train_loader = torch.utils.data.DataLoader(
         train_dataset, batch_size=BATCH_SIZE, shuffle=True
     )
-    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
+    val_loader = torch.utils.data.DataLoader(
+        val_dataset, batch_size=BATCH_SIZE, shuffle=False
+    )
 
     print(f"Train dataset size: {len(train_dataset)}")
     print(f"Train batches per epoch: {len(train_loader)}")
@@ -225,21 +231,13 @@ with mlflow.start_run() as run:
         start_epoch, best_val_loss = 0, float("inf")
 
     for epoch in range(num_epochs):
-        train_loss, train_acc = train(
-            model, train_loader, optimizer, device
-        )
+        train_loss, train_acc = train(model, train_loader, optimizer, device)
 
-        val_loss, val_acc = evaluate(
-            model, val_loader, device
-        )
+        val_loss, val_acc = evaluate(model, val_loader, device)
 
         print(f"[Epoch {epoch+1}]")
-        print(
-            f" Train Loss: {train_loss:.4f} | Acc: {train_acc:.2%}"
-        )
-        print(
-            f" Val   Loss: {val_loss:.4f} | Acc: {val_acc:.2%}"
-        )
+        print(f" Train Loss: {train_loss:.4f} | Acc: {train_acc:.2%}")
+        print(f" Val   Loss: {val_loss:.4f} | Acc: {val_acc:.2%}")
 
         # Log metrics
         mlflow.log_metrics(
