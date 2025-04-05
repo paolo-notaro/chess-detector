@@ -70,9 +70,13 @@ class ChessMoveFromDiffDataset(Dataset):
     def __len__(self):
         return len(self.df)
 
-    def _load_image(self, i):
-        path = os.path.join(self.diff_images_dir, f"{i}.png")
+    def _load_image(self, id):
+        path = os.path.join(self.diff_images_dir, f"{id}.png")
         img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+
+        if img is None:
+            raise FileNotFoundError(f"Image {path} not found.")
+
         img = cv2.resize(img, (224, 224)) if img.shape != (224, 224) else img
         img = img.astype('float32') / 255.0
 
@@ -90,9 +94,10 @@ class ChessMoveFromDiffDataset(Dataset):
 
     def __getitem__(self, index):
         row = self.df.iloc[index]
+        id = row["id"]
         move_uci = row["move_uci"]
 
-        diff_tensor = self._load_image(index)
+        diff_tensor = self._load_image(id)
 
         from_sq = move_uci[0:2]
         to_sq = move_uci[2:4]
