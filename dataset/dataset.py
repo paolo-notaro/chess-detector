@@ -1,13 +1,18 @@
+"""dataset.py: Dataset classes for chess move prediction."""
+
+import os
+
+import cv2
+import pandas as pd
 import torch
 from torch.utils.data import Dataset
-import pandas as pd
-import os
-import cv2
+
 from dataset import rendering
 
 SQUARES = [f"{file}{rank}" for rank in range(1, 9) for file in "abcdefgh"]
 SQUARE_TO_IDX = {sq: i for i, sq in enumerate(SQUARES)}
 PROMOTION_TO_IDX = {"": 0, "q": 1, "r": 2, "b": 3, "n": 4}
+
 
 class ChessMoveDatasetFromCSV(Dataset):
     def __init__(self, csv_path, image_dir):
@@ -25,7 +30,7 @@ class ChessMoveDatasetFromCSV(Dataset):
         path = os.path.join(self.image_dir, f"{image_id}.png")
         img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
         img = cv2.resize(img, (224, 224)) if img.shape != (224, 224) else img
-        img = img.astype('float32') / 255.0
+        img = img.astype("float32") / 255.0
         return torch.from_numpy(img).unsqueeze(0)  # shape: (1, 224, 224)
 
     def __getitem__(self, idx):
@@ -44,7 +49,7 @@ class ChessMoveDatasetFromCSV(Dataset):
         label = {
             "from": torch.tensor(SQUARE_TO_IDX[from_sq], dtype=torch.long),
             "to": torch.tensor(SQUARE_TO_IDX[to_sq], dtype=torch.long),
-            "promotion": torch.tensor(PROMOTION_TO_IDX.get(promo, 0), dtype=torch.long)
+            "promotion": torch.tensor(PROMOTION_TO_IDX.get(promo, 0), dtype=torch.long),
         }
 
         return before_tensor, after_tensor, label
@@ -78,15 +83,17 @@ class ChessMoveFromDiffDataset(Dataset):
             raise FileNotFoundError(f"Image {path} not found.")
 
         img = cv2.resize(img, (224, 224)) if img.shape != (224, 224) else img
-        img = img.astype('float32') / 255.0
+        img = img.astype("float32") / 255.0
 
         # Split into 64 (32x32) patches
         patches = []
         for row in range(0, 224, 28):
             for col in range(0, 224, 28):
-                patch = img[row:row+28, col:col+28]
+                patch = img[row : row + 28, col : col + 28]
                 patch = cv2.resize(patch, (32, 32))  # Standardize to 32x32
-                patch = torch.tensor(patch, dtype=torch.float32).unsqueeze(0)  # (1, 32, 32)
+                patch = torch.tensor(patch, dtype=torch.float32).unsqueeze(
+                    0
+                )  # (1, 32, 32)
                 patches.append(patch)
 
         patches_tensor = torch.stack(patches)  # (64, 1, 32, 32)
@@ -106,7 +113,7 @@ class ChessMoveFromDiffDataset(Dataset):
         label = {
             "from": torch.tensor(SQUARE_TO_IDX[from_sq], dtype=torch.long),
             "to": torch.tensor(SQUARE_TO_IDX[to_sq], dtype=torch.long),
-            "promotion": torch.tensor(PROMOTION_TO_IDX.get(promo, 0), dtype=torch.long)
+            "promotion": torch.tensor(PROMOTION_TO_IDX.get(promo, 0), dtype=torch.long),
         }
 
         return diff_tensor, label

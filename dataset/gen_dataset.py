@@ -1,11 +1,13 @@
-import os
-import download
-import analysis
+"""gen_dataset.py: Generate a dataset of chess positions."""
 import csv
+import os
+import random
+
+import analysis
+import download
+import postprocessing
 import rendering
 from chess import Board
-import postprocessing
-import random
 
 # Dataset
 GAMES = r"lichess_processed.pgn"
@@ -21,32 +23,50 @@ METADATA_FILE = os.path.abspath(r"./metadata.json")
 ERRORS_FILE = os.path.abspath(r"./errors.txt")
 
 # Generation settings
-BATCH_SIZE = 1 # Entries processed before saving state
+BATCH_SIZE = 1  # Entries processed before saving state
 
-DELETE_RENDERED = True # Delete rendered images after processing
-GEN_DIFF = True # Generate diff images
+DELETE_RENDERED = True  # Delete rendered images after processing
+GEN_DIFF = True  # Generate diff images
 
-SUPPRESS_BLENDER_OUTPUT = False # Suppress Blender output
+SUPPRESS_BLENDER_OUTPUT = False  # Suppress Blender output
+
 
 def download_and_select_moves():
-        download.download_from_lichess(name = "lichess_db_standard_rated_2016-03", output_path = "lichess_truncated.pgn", keep_n = 10000)
-        sorted_moves = analysis.analyze_games("lichess_truncated.pgn")
-        print(f"Total of {sorted_moves['total']} moves found. What % of moves should we keep (out of 100)?")
-        
-        n_moves = int(input())
+    download.download_from_lichess(
+        name="lichess_db_standard_rated_2016-03",
+        output_path="lichess_truncated.pgn",
+        keep_n=10000,
+    )
+    sorted_moves = analysis.analyze_games("lichess_truncated.pgn")
+    print(
+        f"Total of {sorted_moves['total']} moves found. What % of moves should we keep (out of 100)?"
+    )
 
-        print(f"Do you want to set a minimum count for each move type? (number or empty)")
+    n_moves = int(input())
 
-        typed = input()
+    print(f"Do you want to set a minimum count for each move type? (number or empty)")
 
-        min_count = int(typed) if typed != "" else 0
+    typed = input()
 
-        moves = list(analysis.select(sorted_moves, n_moves / 100, n_moves / 100, n_moves / 100, n_moves / 100, min_count = min_count, print_info = True))
+    min_count = int(typed) if typed != "" else 0
 
-        print("Shuffling moves...")
-        random.shuffle(moves)
+    moves = list(
+        analysis.select(
+            sorted_moves,
+            n_moves / 100,
+            n_moves / 100,
+            n_moves / 100,
+            n_moves / 100,
+            min_count=min_count,
+            print_info=True,
+        )
+    )
 
-        return moves
+    print("Shuffling moves...")
+    random.shuffle(moves)
+
+    return moves
+
 
 def get_moves():
     if not os.path.exists(MOVES):
@@ -57,7 +77,7 @@ def get_moves():
             moves_file.write("before_fen,move_uci,after_fen\n")
             for before_id, move, after_id in moves:
                 moves_file.write(f"{before_id},{move},{after_id}\n")
-    
+
     else:
         print("An entries.csv file already exists. Do you want to append to it? (y/n)")
         typed = input()
@@ -70,10 +90,9 @@ def get_moves():
     with open(MOVES, "r") as moves_file:
         return list(csv.reader(moves_file))[1:]
 
-                
 
 if __name__ == "__main__":
-    
+
     os.makedirs(RENDER_PATH, exist_ok=True)
     os.makedirs(PREPROCESS_PATH, exist_ok=True)
 
@@ -122,11 +141,23 @@ if __name__ == "__main__":
 
             piece_placement_variability = rendering.gen_piece_placement_variability()
 
-            if not os.path.exists(os.path.join(PREPROCESS_PATH, f"{before_board_id}.png")):
-                before_board_id = rendering.process_board(before_board, RENDER_PATH, piece_placement_variability, suppress_output=SUPPRESS_BLENDER_OUTPUT)
-                before_img = postprocessing.process_image(os.path.join(RENDER_PATH, f"{before_board_id}.png"), chessboard_corners)
+            if not os.path.exists(
+                os.path.join(PREPROCESS_PATH, f"{before_board_id}.png")
+            ):
+                before_board_id = rendering.process_board(
+                    before_board,
+                    RENDER_PATH,
+                    piece_placement_variability,
+                    suppress_output=SUPPRESS_BLENDER_OUTPUT,
+                )
+                before_img = postprocessing.process_image(
+                    os.path.join(RENDER_PATH, f"{before_board_id}.png"),
+                    chessboard_corners,
+                )
 
-                postprocessing.save_image(before_img, os.path.join(PREPROCESS_PATH, f"{before_board_id}.png"))
+                postprocessing.save_image(
+                    before_img, os.path.join(PREPROCESS_PATH, f"{before_board_id}.png")
+                )
 
                 if DELETE_RENDERED:
                     os.remove(os.path.join(RENDER_PATH, f"{before_board_id}.png"))
@@ -134,12 +165,24 @@ if __name__ == "__main__":
             else:
                 print(f"Processed image already exists: {before_board_id}.png")
 
-            if not os.path.exists(os.path.join(PREPROCESS_PATH, f"{after_board_id}.png")):
-                after_board_id = rendering.process_board(after_board, RENDER_PATH, piece_placement_variability, suppress_output=SUPPRESS_BLENDER_OUTPUT)
-                
-                after_img = postprocessing.process_image(os.path.join(RENDER_PATH, f"{after_board_id}.png"), chessboard_corners)
-                
-                postprocessing.save_image(after_img, os.path.join(PREPROCESS_PATH, f"{after_board_id}.png"))
+            if not os.path.exists(
+                os.path.join(PREPROCESS_PATH, f"{after_board_id}.png")
+            ):
+                after_board_id = rendering.process_board(
+                    after_board,
+                    RENDER_PATH,
+                    piece_placement_variability,
+                    suppress_output=SUPPRESS_BLENDER_OUTPUT,
+                )
+
+                after_img = postprocessing.process_image(
+                    os.path.join(RENDER_PATH, f"{after_board_id}.png"),
+                    chessboard_corners,
+                )
+
+                postprocessing.save_image(
+                    after_img, os.path.join(PREPROCESS_PATH, f"{after_board_id}.png")
+                )
 
                 if DELETE_RENDERED:
                     os.remove(os.path.join(RENDER_PATH, f"{after_board_id}.png"))
@@ -154,7 +197,9 @@ if __name__ == "__main__":
 
         except Exception as e:
             with open(ERRORS_FILE, "a") as f:
-                f.write(f"Error processing images: {before_fen}, {after_fen}: {e.__class__}\n")
+                f.write(
+                    f"Error processing images: {before_fen}, {after_fen}: {e.__class__}\n"
+                )
         finally:
             if i % BATCH_SIZE == 0:
 

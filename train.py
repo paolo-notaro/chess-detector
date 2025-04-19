@@ -1,4 +1,9 @@
-from image_pairs_models import SmallCNNEncoder, MidCNNEncoder, ChessMovePredictor, count_params
+from image_pairs_models import (
+    SmallCNNEncoder,
+    MidCNNEncoder,
+    ChessMovePredictor,
+    count_params,
+)
 import torch
 from dataset import dataset
 from tqdm import tqdm

@@ -11,3 +11,5 @@ torchaudio
 mlflow
 isort
 black
+flake8
+pylint

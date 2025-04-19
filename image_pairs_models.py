@@ -230,4 +230,3 @@ class ChessMovePredictor(nn.Module):
         promotion_logits = self.promotion_head(x)  # [B, 5]
 
         return from_logits, to_logits, promotion_logits
-
