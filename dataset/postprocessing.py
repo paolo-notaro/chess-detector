@@ -1,4 +1,5 @@
 """postprocessing.py: Post-process chessboard images."""
+
 import glob
 
 import cv2 as cv

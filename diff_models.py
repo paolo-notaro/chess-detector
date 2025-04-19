@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision.models import resnet18, ResNet18_Weights
+from torchvision.models import ResNet18_Weights, resnet18
 
 
 class PatchEncoder(nn.Module):

@@ -1,4 +1,5 @@
 """gen_dataset.py: Generate a dataset of chess positions."""
+
 import csv
 import os
 import random

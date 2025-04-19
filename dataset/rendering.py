@@ -1,4 +1,5 @@
 """rendering.py: Render chess boards using Blender."""
+
 import math
 import os
 import random
@@ -160,7 +161,7 @@ def gen_piece_placement_variability():
     """
     Generate a 64x64 matrix of tuples of three items (x placement variability,
       y placement variability, rotation variability).
-      X and Y placement variability are in the range [-PIECE_PLACEMENT_VARIABILITY, 
+      X and Y placement variability are in the range [-PIECE_PLACEMENT_VARIABILITY,
       PIECE_PLACEMENT_VARIABILITY].
     Rotation variability is in the range [0, 2*PI].
     """

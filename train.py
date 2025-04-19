@@ -1,16 +1,18 @@
-from image_pairs_models import (
-    SmallCNNEncoder,
-    MidCNNEncoder,
-    ChessMovePredictor,
-    count_params,
-)
-import torch
-from dataset import dataset
-from tqdm import tqdm
 import csv
 import os
 import random
+
 import mlflow
+import torch
+from tqdm import tqdm
+
+from dataset import dataset
+from image_pairs_models import (
+    ChessMovePredictor,
+    MidCNNEncoder,
+    SmallCNNEncoder,
+    count_params,
+)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

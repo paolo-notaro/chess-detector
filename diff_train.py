@@ -1,12 +1,14 @@
-from diff_models import ChessMoveModel
-from image_pairs_models import count_params
-import torch
-from dataset import dataset
-from tqdm import tqdm
 import csv
 import os
 import random
+
 import mlflow
+import torch
+from tqdm import tqdm
+
+from dataset import dataset
+from diff_models import ChessMoveModel
+from image_pairs_models import count_params
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
