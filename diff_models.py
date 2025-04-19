@@ -7,29 +7,22 @@ from torchvision.models import resnet18, ResNet18_Weights
 class PatchEncoder(nn.Module):
     def __init__(self, in_channels=1, embed_dim=128):
         super().__init__()
-        # Load a pretrained ResNet18 model
-        resnet = resnet18(weights=ResNet18_Weights.DEFAULT)
-        # Modify the first convolutional layer to accept the desired input channels
-        self.resnet_features = nn.Sequential(
-            nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3, bias=False),
-            *list(resnet.children())[1:-2]  # Use all layers except the last two
+        # Load a pre-trained ResNet18 model
+        self.resnet = resnet18(weights=ResNet18_Weights.DEFAULT)
+        # Modify the first convolutional layer to accept `in_channels` input channels
+        self.resnet.conv1 = nn.Conv2d(
+            in_channels, 64, kernel_size=7, stride=2, padding=3, bias=False
         )
-        # Add a projection layer to match the desired embedding dimension
-        self.projection = nn.Sequential(
-            nn.AdaptiveAvgPool2d((1, 1)),
-            nn.Flatten(),
-            nn.Linear(resnet.fc.in_features, embed_dim),
-        )
+        # Replace the fully connected layer to output `embed_dim` features
+        self.resnet.fc = nn.Linear(self.resnet.fc.in_features, embed_dim)
 
     def forward(self, patches):
         # patches: [B, 64, C, H, W]
-        B, S, C, H, W = patches.shape
-        patches = patches.view(B * S, C, H, W)  # Flatten the square dimension
-        features = self.resnet_features(patches)  # Extract features using ResNet
-        embeddings = self.projection(
-            features
-        )  # Project to the desired embedding dimension
-        embeddings = embeddings.view(B, S, -1)  # Reshape back to [B, 64, embed_dim]
+        B, N, C, H, W = patches.shape
+        # Reshape to process one patch at a time through ResNet18
+        patches = patches.view(B * N, C, H, W)  # [B * 64, C, H, W]
+        embeddings = self.resnet(patches)  # [B * 64, embed_dim]
+        embeddings = embeddings.view(B, N, -1)  # [B, 64, embed_dim]
         return embeddings
 
 

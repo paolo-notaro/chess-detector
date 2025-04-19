@@ -11,11 +11,11 @@ import mlflow
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 num_epochs = 100000
-checkpoint_to_load = "models\checkpoint_clumsy-mole-932_epoch8.pth"  # "models/checkpoint_hilarious-doe-40_epoch1.pth" or None
+checkpoint_to_load = None  # "models/checkpoint_hilarious-doe-40_epoch1.pth" or None
 
 LEARNING_RATE = 1e-4
-EMBED_DIM = 128
-BATCH_SIZE = 32
+EMBED_DIM = 256
+BATCH_SIZE = 16
 LIMIT_DATASET = None  # None for no limit, otherwise set to the number of samples to use. To test if overfitting works
 
 train_eval_ratio = 0.8
