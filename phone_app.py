@@ -56,7 +56,7 @@ else:
             NEXT_ID = 0
 
 
-def get_prediction(diff_image, board_fen):
+def get_prediction(diff_image, board_fen, turn='wb'):
     
     # Resize and normalize the diff image
     preprocessed_diff_image = ChessMoveFromDiffDataset.preprocess_image(diff_image, preprocess_resize=PREPROCESSING_OUT_SIZE)
@@ -65,10 +65,14 @@ def get_prediction(diff_image, board_fen):
     patch_tensor = ChessMoveFromDiffDataset.patch_image(preprocessed_diff_image, resize_size=FINAL_PATCH_SIZE)
 
 
-    move, confidence = predict_move(model, patch_tensor, device, board_fen=board_fen)
-    print(f"Predicted move: {move} (confidence: {confidence:.4f})")
+    moves = predict_move(model, patch_tensor, device, board_fen=board_fen, topk=5, turn=turn)
 
-    return move
+    # Print the top 5 predicted moves
+    print("Top 5 predicted moves:")
+    for i, (move, conf) in enumerate(moves):
+        print(f"{i+1}: {move} ({conf:.4f})")
+
+    return moves
 
 def get_image():
     response = requests.get(CAMERA_URL, timeout=5)
@@ -124,6 +128,32 @@ def save_last_move(last_diff):
 
     NEXT_ID += 1
 
+def prompt_user_choice(predicted_moves):
+    """ Shows a dialog that prompts the user to select a move from the predicted moves, with a number corresponding to each move. """
+    move_strs = [f"{i+1}: {move}" for i, (move, _) in enumerate(predicted_moves)]
+    move_str = "\n".join(move_strs)
+
+    selected_move = simpledialog.askstring(
+        "Select Move",
+        f"Select a move, leave empty for the first choice or type it in UCI form:\n{move_str}",
+        parent=root
+    )
+
+    if len(selected_move) == 0:
+        selected_move = 1
+    else:
+        try:
+            intval = int(selected_move)
+            if intval < 1 or intval > len(predicted_moves):
+                raise ValueError("Invalid selection")
+            selected_move = intval
+        except ValueError:
+            # If the input is not an integer, use it as a UCI move string
+            selected_move = selected_move.strip()
+            return selected_move  # Return the UCI string directly
+
+    return predicted_moves[selected_move - 1][0]  # Return the UCI string of the selected move
+
 def capture_move():
     global last_diff, before_image, after_image, board
 
@@ -140,7 +170,10 @@ def capture_move():
 
         diff_image = gen_diff(before_image, after_image)
 
-        pred_uci = get_prediction(diff_image, board.board_fen())
+        predicted_moves = get_prediction(diff_image, board.board_fen(), turn='w' if board.turn == chess.WHITE else 'b')
+
+        pred_uci = prompt_user_choice(predicted_moves)
+
         move = chess.Move.from_uci(pred_uci)
 
         while not move in board.legal_moves:
