@@ -31,14 +31,15 @@ class MoveScorer(nn.Module):
         super().__init__()
         self.from_proj = nn.Linear(embed_dim, proj_size)
         self.to_proj = nn.Linear(embed_dim, proj_size)
+        self.temperature = nn.Parameter(torch.tensor(1.0))
 
     def forward(self, embeddings):
         # embeddings: [B, 64, embed_dim]
-        from_vecs = F.normalize(self.from_proj(embeddings), dim=-1)  # [B, 64, proj_size]
-        to_vecs = F.normalize(self.to_proj(embeddings), dim=-1)  # [B, 64, proj_size]
+        from_vecs = self.from_proj(embeddings) # [B, 64, proj_size]
+        to_vecs = self.to_proj(embeddings)  # [B, 64, proj_size]
 
-        # Compute pairwise move scores using batched matrix multiplication
-        scores = torch.matmul(from_vecs, to_vecs.transpose(1, 2))  # [B, 64, 64]
+        # Compute pairwise move scores using batched matrix multiplication / normalize by learned temperature
+        scores = torch.matmul(from_vecs, to_vecs.transpose(1, 2)) * self.temperature  # [B, 64, 64]
         return scores
 
 
