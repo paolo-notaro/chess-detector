@@ -1,7 +1,8 @@
-import chess
-import chess.pgn
 import io
 import random
+
+import chess
+import chess.pgn
 
 
 def analyze_games(pgn_file = 'lichess_truncated.pgn'):

@@ -1,13 +1,15 @@
-import torch
-from torch.utils.data import Dataset
-import pandas as pd
 import os
-import cv2
-from dataset import rendering
-from matplotlib import pyplot as plt
-import numpy as np
 
+import cv2
+import numpy as np
+import pandas as pd
+import torch
+from matplotlib import pyplot as plt
+from torch.utils.data import Dataset
+
+from dataset import rendering
 from dataset.chess_utils import PROMOTION_TO_IDX, SQUARE_TO_IDX, from_uci
+
 
 class ChessMoveDatasetFromCSV(Dataset):
     def __init__(self, csv_path, image_dir):

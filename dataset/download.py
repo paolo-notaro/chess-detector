@@ -1,6 +1,7 @@
+import os
+
 import requests
 import zstandard as zstd
-import os
 
 LICHESS_URL = "https://database.lichess.org/standard/"
 

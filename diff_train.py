@@ -1,13 +1,17 @@
-from diff_models import ChessMoveModel, ConvPatchEncoder, ResnetPatchEncoder
-from image_pairs_models import count_params
-import torch
-from dataset import dataset
-from tqdm import tqdm
+"""diff_train.py: Train a model to predict chess moves from image patches."""
+
 import csv
 import os
 import random
+
 import mlflow
-from metrics import compute_metrics, aggregate_metrics
+import torch
+from tqdm import tqdm
+
+from dataset import dataset
+from diff_models import ChessMoveModel, ConvPatchEncoder
+from image_pairs_models import count_params
+from metrics import aggregate_metrics, compute_metrics
 
 encoder_class = ConvPatchEncoder  # or ResnetPatchEncoder
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -19,7 +23,12 @@ LEARNING_RATE = 1e-4
 EMBED_DIM = 256
 TRAIN_BATCH_SIZE = 16
 EVAL_BATCH_SIZE = 128
-LIMIT_DATASET = None  # None for no limit, otherwise set to the number of samples to use. To test if overfitting works
+
+# To test if overfitting works
+LIMIT_DATASET = (
+    None  # None for no limit, otherwise set to the number of samples to use.
+)
+
 SEED = 42
 
 train_eval_ratio = 0.8
@@ -32,12 +41,13 @@ else:
 
 criterion = torch.nn.CrossEntropyLoss(reduction="mean")
 
-def prepare_batch(patch_tensor, label, device):
-    patch_tensor = patch_tensor.to(device) # shape: (B, 64, 1, 32, 32)
-    y_from = label["from"].to(device) # shape: (B,)
-    y_to = label["to"].to(device) # shape: (B,)
 
-    B = patch_tensor.size(0) # batch size
+def prepare_batch(patch_tensor, label, device):
+    patch_tensor = patch_tensor.to(device)  # shape: (B, 64, 1, 32, 32)
+    y_from = label["from"].to(device)  # shape: (B,)
+    y_to = label["to"].to(device)  # shape: (B,)
+
+    B = patch_tensor.size(0)  # batch size
     gt_idx = y_from * 64 + y_to
     inverse_idx = y_to * 64 + y_from
 
@@ -67,7 +77,9 @@ def train(model, dataloader, optimizer, device) -> dict[str, float]:
     all_metrics = []
 
     for patch_tensor, label in (progress_bar := tqdm(dataloader)):
-        patch_tensor, gt_move_idx, inverse_gt_move_idx, B = prepare_batch(patch_tensor, label, device)
+        patch_tensor, gt_move_idx, inverse_gt_move_idx, B = prepare_batch(
+            patch_tensor, label, device
+        )
 
         # Forward pass
         scores = model(patch_tensor)  # [B, 64, 64], batch size, from square, to square
@@ -80,12 +92,13 @@ def train(model, dataloader, optimizer, device) -> dict[str, float]:
         optimizer.step()
 
         # Compute metrics
-        metrics = compute_metrics(scores_flat, gt_move_idx, inverse_gt_move_idx, loss_value=loss.item())
+        metrics = compute_metrics(
+            scores_flat, gt_move_idx, inverse_gt_move_idx, loss_value=loss.item()
+        )
         all_metrics.append(metrics)
 
         # Update progress bar
         progress_bar.set_description(f"Batch Loss: {metrics['loss']:.4f}")
-
 
     return aggregate_metrics(all_metrics)
 
@@ -98,7 +111,7 @@ def evaluate(model, dataloader, device) -> dict[str, float]:
         model (nn.Module): The model to evaluate.
         dataloader (DataLoader): DataLoader for the evaluation data.
         device (torch.device): Device to run the model on.
-    
+
     Returns:
         dict[str, float]: Dictionary containing several metrics, including:
             - loss: Average loss for the evaluation.
@@ -111,14 +124,18 @@ def evaluate(model, dataloader, device) -> dict[str, float]:
 
     with torch.no_grad():
         for patch_tensor, label in tqdm(dataloader, desc="Evaluating"):
-            patch_tensor, gt_move_idx, inverse_move_idx, B = prepare_batch(patch_tensor, label, device)
+            patch_tensor, gt_move_idx, inverse_move_idx, B = prepare_batch(
+                patch_tensor, label, device
+            )
 
             scores = model(patch_tensor)
             scores_flat = scores.view(B, -1)
 
             loss = criterion(scores_flat, gt_move_idx)
 
-            metrics = compute_metrics(scores_flat, gt_move_idx, inverse_move_idx, loss_value=loss.item())
+            metrics = compute_metrics(
+                scores_flat, gt_move_idx, inverse_move_idx, loss_value=loss.item()
+            )
             all_metrics.append(metrics)
 
     return aggregate_metrics(all_metrics)
@@ -217,12 +234,8 @@ with mlflow.start_run() as run:
 
     tot_params = count_params(model, trainable_only=False)
     trainable_params = count_params(model, trainable_only=True)
-    encoder_params = count_params(
-        model.encoder, trainable_only=True
-    )
-    scorer_params = count_params(
-        model.scorer, trainable_only=True
-    )
+    encoder_params = count_params(model.encoder, trainable_only=True)
+    scorer_params = count_params(model.scorer, trainable_only=True)
     print(f"Total params: {tot_params}")
     print(f"Trainable params: {trainable_params}")
     print(f"Encoder params: {encoder_params}")
@@ -232,7 +245,6 @@ with mlflow.start_run() as run:
     mlflow.log_param("trainable_params", trainable_params)
     mlflow.log_param("encoder_params", encoder_params)
     mlflow.log_param("scorer_params", scorer_params)
-    
 
     train_dataset = dataset.ChessMoveFromDiffDataset(
         "dataset/diff_entries_train.csv", "dataset/diff", limit=LIMIT_DATASET
@@ -274,15 +286,13 @@ with mlflow.start_run() as run:
         # Log metrics
         mlflow.log_metrics(
             {
-                **{f"{k}.train": v
-                for k, v in train_results.items()},
-                **{f"{k}.val": v
-                for k, v in val_results.items()},
+                **{f"{k}.train": v for k, v in train_results.items()},
+                **{f"{k}.val": v for k, v in val_results.items()},
             },
             step=epoch + 1,
         )
 
-        if val_results["acc"] >  best_val_acc:
+        if val_results["acc"] > best_val_acc:
             best_val_acc = val_results["acc"]
             ckpt_name = f"models/checkpoint_{run_name}_epoch{epoch+1}.pth"
             save_checkpoint(

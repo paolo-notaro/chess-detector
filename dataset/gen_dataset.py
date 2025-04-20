@@ -1,11 +1,12 @@
-import os
-import download
-import analysis
 import csv
+import os
+import random
+
+import analysis
+import download
+import postprocessing
 import rendering
 from chess import Board
-import postprocessing
-import random
 
 # Dataset
 GAMES = r"lichess_processed.pgn"

@@ -1,5 +1,6 @@
-import torch
 from collections import defaultdict
+
+import torch
 
 
 def compute_metrics(scores_flat, gt_idx, inverse_idx, loss_value: float) -> dict[str, float]:

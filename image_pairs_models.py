@@ -1,8 +1,9 @@
+from typing import Type
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as models
-from typing import Type
 
 
 # Count parameters for each encoder alone

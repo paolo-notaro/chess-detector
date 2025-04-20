@@ -1,9 +1,9 @@
-import numpy as np
-import cv2 as cv
-import json
 import glob
+import json
 import os
 
+import cv2 as cv
+import numpy as np
 
 # Validate set ratio
 VALIDATE_SET_RATIO = 0.2

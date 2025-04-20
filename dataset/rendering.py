@@ -1,12 +1,13 @@
+import math
 import os
+import random
 import sys
 from contextlib import contextmanager
+
+import bpy
 import chess
 import chess.pgn
-from chess import Board, SQUARES, square_file, square_rank
-import bpy
-import random 
-import math
+from chess import SQUARES, Board, square_file, square_rank
 
 BLENDER_EXECUTABLE = r"C:/Program Files/Blender Foundation/Blender 4.3/blender.exe"
 BLENDER_SCENE = os.path.abspath(r"./ChessBoard/Source/Chess Board.blend")
