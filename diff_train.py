@@ -1,4 +1,4 @@
-from diff_models import ChessMoveModel
+from diff_models import ChessMoveModel, ConvPatchEncoder, ResnetPatchEncoder
 from image_pairs_models import count_params
 import torch
 from dataset import dataset
@@ -9,7 +9,7 @@ import random
 import mlflow
 from metrics import compute_metrics, aggregate_metrics
 
-
+encoder_class = ConvPatchEncoder  # or ResnetPatchEncoder
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 num_epochs = 100000
@@ -210,8 +210,9 @@ with mlflow.start_run() as run:
     mlflow.log_param("starting_checkpoint", checkpoint_to_load)
     mlflow.log_param("model", "ChessMoveModel")
     mlflow.log_param("embed_dim", EMBED_DIM)
+    mlflow.log_param("encoder_class", encoder_class.__name__)
 
-    model = ChessMoveModel(embed_dim=EMBED_DIM).to(device)
+    model = ChessMoveModel(embed_dim=EMBED_DIM, encoder_class=encoder_class).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
     tot_params = count_params(model, trainable_only=False)

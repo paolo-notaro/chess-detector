@@ -5,7 +5,7 @@ import cv2 as cv
 from dataset.postprocessing import gen_diff, rectify_board, calibrate_camera_from_path_match
 from dataset.dataset import ChessMoveFromDiffDataset
 from dataset.chess_utils import argmax_2d_indices_batch, best_valid_move_from_logits, is_path_fenlike
-from diff_models import ChessMoveModel
+from diff_models import ChessMoveModel, ConvPatchEncoder
 from dataset import chess_utils  # for SQUARES and SQUARE_TO_IDX
 import os
 
@@ -13,7 +13,7 @@ PREPROCESSING_OUT_SIZE = 224  # Size of the preprocessed images
 PATCH_SIZE = PREPROCESSING_OUT_SIZE // 8  # As used in the dataset loading script
 FINAL_PATCH_SIZE = 32  # Final patch size for the model input
 
-
+ENCODER_CLASS = ConvPatchEncoder  # Change this to ResnetPatchEncoder if needed
 
 def predict_move(model: torch.nn.Module, patch_tensor: torch.tensor, device: torch.device, board_fen: str = None) -> str:
     """
@@ -79,7 +79,7 @@ def main(args):
     patch_tensor = ChessMoveFromDiffDataset.patch_image(preprocessed_diff_image, resize_size=FINAL_PATCH_SIZE)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = ChessMoveModel(embed_dim=256)
+    model = ChessMoveModel(embed_dim=256, encoder_class=ENCODER_CLASS)
     model.load_state_dict(torch.load(args.checkpoint, map_location=device)["model_state_dict"])
     model.to(device)
 
