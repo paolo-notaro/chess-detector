@@ -36,20 +36,22 @@ def from_uci(move: str) -> tuple[int, int, int]:
 
 def argmax_2d_indices_batch(tensor: torch.Tensor) -> list[tuple[int, int]]:
     """
-    Return a list of (from_idx, to_idx) for each item in a [B, 64, 64] tensor.
+    Return a list of (from_idx, to_idx, confidence) for each item in a [B, 64, 64] tensor.
 
     Args:
         tensor (torch.Tensor): shape [B, 64, 64]
 
     Returns:
-        List of tuples: [(from_idx, to_idx), ...]
+        List of tuples: [(from_idx, to_idx, confidence), ...]
     """
     assert tensor.dim() == 3 and tensor.shape[1:] == (64, 64), \
         f"Expected shape [B, 64, 64], got {tensor.shape}"
-    flat_idx = tensor.view(tensor.size(0), -1).argmax(dim=1)
+    flattened_tensor = tensor.view(tensor.size(0), -1)  # [B, 4096]
+    flat_idx = flattened_tensor.argmax(dim=1)
     from_idx = flat_idx // 64
     to_idx = flat_idx % 64
-    return list(zip(from_idx.tolist(), to_idx.tolist()))
+    confidence = flattened_tensor.max(dim=1)
+    return list(zip(from_idx.tolist(), to_idx.tolist(), confidence.tolist()))
 
 
 def is_move_valid(from_idx: int, to_idx: int, board_fen: str = None) -> bool:
@@ -70,7 +72,7 @@ def best_valid_move_from_logits(
     logits: torch.Tensor,
     move_validator=is_move_valid,
     board_fen: str = None
-) -> tuple[int, int]:
+) -> tuple[int, int, float]:
     """
     Returns the best (from_idx, to_idx) pair from logits[64,64],
     skipping invalid moves (e.g. from == to).
@@ -81,7 +83,7 @@ def best_valid_move_from_logits(
         board_fen (str): FEN string for the current board position
     
     Returns:
-        tuple[int, int]: (from_idx, to_idx) of the most likely valid move
+        tuple[int, int, float]: (from_idx, to_idx) of the most likely valid move
     """
     assert logits.shape == (64, 64)
     probs = torch.nn.functional.softmax(logits.view(-1), dim=0)  # [4096]
@@ -92,7 +94,8 @@ def best_valid_move_from_logits(
         from_idx = flat_idx // 64
         to_idx = flat_idx % 64
         if move_validator(from_idx.item(), to_idx.item(), board_fen=board_fen):
-            return from_idx.item(), to_idx.item()
+            confidence = probs[flat_idx].item()
+            return from_idx.item(), to_idx.item(), confidence
 
     raise ValueError("No valid moves found in logits")
 

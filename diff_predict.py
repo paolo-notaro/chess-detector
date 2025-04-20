@@ -26,7 +26,8 @@ def predict_move(model: torch.nn.Module, patch_tensor: torch.tensor, device: tor
         board_fen (str): The FEN string of the board state before the move. If None, no validation is performed.
 
     Returns:
-        str: The predicted move in UCI format.    
+        str: The predicted move in UCI format.
+        float: The confidence score of the predicted move.
     """
     # assert patch_tensor.shape == (64, 1, 32, 32), f"Expected shape [64, 1, 32, 32], got {patch_tensor.shape}"
     model.eval()
@@ -34,10 +35,10 @@ def predict_move(model: torch.nn.Module, patch_tensor: torch.tensor, device: tor
     with torch.no_grad():
         patch_tensor = patch_tensor.unsqueeze(0)  # Add batch dimension
         scores = model(patch_tensor) 
-        from_idx, to_idx = best_valid_move_from_logits(scores.squeeze(0), board_fen=board_fen)  # Remove batch dimension
-        # from_idx, to_idx = argmax_2d_indices_batch(scores)[0]
+        from_idx, to_idx, score = best_valid_move_from_logits(scores.squeeze(0), board_fen=board_fen)  # Remove batch dimension
+        # from_idx, to_idx, score = argmax_2d_indices_batch(scores)[0]
         move_uci = chess_utils.SQUARES[from_idx] + chess_utils.SQUARES[to_idx]
-        return move_uci
+        return move_uci, score
 
 
 def main(args):
@@ -82,8 +83,8 @@ def main(args):
     model.load_state_dict(torch.load(args.checkpoint, map_location=device)["model_state_dict"])
     model.to(device)
 
-    move = predict_move(model, patch_tensor, device, board_fen=board_fen)
-    print(f"Predicted move: {move}")
+    move, confidence = predict_move(model, patch_tensor, device, board_fen=board_fen)
+    print(f"Predicted move: {move} (confidence: {confidence:.4f})")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
