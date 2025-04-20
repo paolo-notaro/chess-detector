@@ -217,9 +217,22 @@ with mlflow.start_run() as run:
 
     tot_params = count_params(model, trainable_only=False)
     trainable_params = count_params(model, trainable_only=True)
+    encoder_params = count_params(
+        model.encoder, trainable_only=True
+    )
+    scorer_params = count_params(
+        model.scorer, trainable_only=True
+    )
+    print(f"Total params: {tot_params}")
+    print(f"Trainable params: {trainable_params}")
+    print(f"Encoder params: {encoder_params}")
+    print(f"Scorer params: {scorer_params}")
 
     mlflow.log_param("total_params", tot_params)
     mlflow.log_param("trainable_params", trainable_params)
+    mlflow.log_param("encoder_params", encoder_params)
+    mlflow.log_param("scorer_params", scorer_params)
+    
 
     train_dataset = dataset.ChessMoveFromDiffDataset(
         "dataset/diff_entries_train.csv", "dataset/diff", limit=LIMIT_DATASET

@@ -7,9 +7,7 @@ from dataset import rendering
 from matplotlib import pyplot as plt
 import numpy as np
 
-SQUARES = [f"{file}{rank}" for rank in range(1, 9) for file in "abcdefgh"]
-SQUARE_TO_IDX = {sq: i for i, sq in enumerate(SQUARES)}
-PROMOTION_TO_IDX = {"": 0, "q": 1, "r": 2, "b": 3, "n": 4}
+from dataset.chess_utils import PROMOTION_TO_IDX, SQUARE_TO_IDX, from_uci
 
 class ChessMoveDatasetFromCSV(Dataset):
     def __init__(self, csv_path, image_dir):
@@ -104,8 +102,8 @@ class ChessMoveFromDiffDataset(Dataset):
                 x = col * PATCH_SIZE
                 y = row * PATCH_SIZE
                 patch = img[y:y + PATCH_SIZE, x:x + PATCH_SIZE]
-                if resize_size:
-                    patch = cv2.resize(patch, (resize_size, resize_size))  # Standardize to 32x32
+                if resize_size and resize_size != PATCH_SIZE:
+                    patch = cv2.resize(patch, (resize_size, resize_size))  # Standardize size
                 # cv2.imwrite(f"test/debug_output_{patch_index}.png", patch * 255)
                 patch = torch.tensor(patch, dtype=torch.float32).unsqueeze(0)  # (1, 32, 32)
                 # print(f"Patch {patch_index} shape: {patch.shape}, row: {row}, col: {col}, x: {x}, y: {y}")
@@ -173,14 +171,12 @@ class ChessMoveFromDiffDataset(Dataset):
 
         diff_tensor = ChessMoveFromDiffDataset._load_image(img_path, preprocess_resize=224, out_resize=32)
 
-        from_sq = move_uci[0:2]
-        to_sq = move_uci[2:4]
-        promo = move_uci[4:] if len(move_uci) > 4 else ""
+        from_sq, to_sq, promo = from_uci(move_uci)
 
         label = {
-            "from": torch.tensor(SQUARE_TO_IDX[from_sq], dtype=torch.long),
-            "to": torch.tensor(SQUARE_TO_IDX[to_sq], dtype=torch.long),
-            "promotion": torch.tensor(PROMOTION_TO_IDX.get(promo, 0), dtype=torch.long)
+            "from": torch.tensor(from_sq, dtype=torch.long),
+            "to": torch.tensor(to_sq, dtype=torch.long),
+            "promotion": torch.tensor(promo, dtype=torch.long)
         }
 
         return diff_tensor, label

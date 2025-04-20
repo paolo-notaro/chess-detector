@@ -4,18 +4,18 @@ import torch
 import cv2 as cv
 from dataset.postprocessing import gen_diff, rectify_board, calibrate_camera
 from dataset.dataset import ChessMoveFromDiffDataset
-from dataset.chess_utils import argmax_2d_indices_batch, best_valid_move_from_logits
+from dataset.chess_utils import argmax_2d_indices_batch, best_valid_move_from_logits, is_path_fenlike
 from diff_models import ChessMoveModel
-from dataset import dataset  # for SQUARES and SQUARE_TO_IDX
+from dataset import chess_utils  # for SQUARES and SQUARE_TO_IDX
 import os
 
 PREPROCESSING_OUT_SIZE = 224  # Size of the preprocessed images
 PATCH_SIZE = PREPROCESSING_OUT_SIZE // 8  # As used in the dataset loading script
-FINAL_PATCH_SIZE = 32
+FINAL_PATCH_SIZE = 32  # Final patch size for the model input
 
 
 
-def predict_move(model: torch.nn.Module, patch_tensor: torch.tensor, device: torch.device) -> str:
+def predict_move(model: torch.nn.Module, patch_tensor: torch.tensor, device: torch.device, board_fen: str = None) -> str:
     """
     Predict the move from the patch tensor using the model.
     
@@ -23,6 +23,7 @@ def predict_move(model: torch.nn.Module, patch_tensor: torch.tensor, device: tor
         model (torch.nn.Module): The trained model.
         patch_tensor (torch.tensor): The input tensor of shape [64, 1, 32, 32].
         device (torch.device): The device to run the model on.
+        board_fen (str): The FEN string of the board state before the move. If None, no validation is performed.
 
     Returns:
         str: The predicted move in UCI format.    
@@ -31,12 +32,11 @@ def predict_move(model: torch.nn.Module, patch_tensor: torch.tensor, device: tor
     model.eval()
     patch_tensor = patch_tensor.to(device)
     with torch.no_grad():
-        print(f"Patch tensor shape: {patch_tensor.shape}")
         patch_tensor = patch_tensor.unsqueeze(0)  # Add batch dimension
         scores = model(patch_tensor) 
-        from_idx, to_idx = best_valid_move_from_logits(scores.squeeze(0))  # Remove batch dimension
+        from_idx, to_idx = best_valid_move_from_logits(scores.squeeze(0), board_fen=board_fen)  # Remove batch dimension
         # from_idx, to_idx = argmax_2d_indices_batch(scores)[0]
-        move_uci = dataset.SQUARES[from_idx] + dataset.SQUARES[to_idx]
+        move_uci = chess_utils.SQUARES[from_idx] + chess_utils.SQUARES[to_idx]
         return move_uci
 
 
@@ -48,6 +48,9 @@ def main(args):
     if not os.path.exists(args.before) or not os.path.exists(args.after):
         print("One or both input images not found.")
         return
+
+    if not (board_fen := is_path_fenlike(args.before)):
+        board_fen = None
     
     if args.preprocess:
         img_before = cv.imread(args.before)
@@ -79,7 +82,7 @@ def main(args):
     model.load_state_dict(torch.load(args.checkpoint, map_location=device)["model_state_dict"])
     model.to(device)
 
-    move = predict_move(model, patch_tensor, device)
+    move = predict_move(model, patch_tensor, device, board_fen=board_fen)
     print(f"Predicted move: {move}")
 
 if __name__ == "__main__":
