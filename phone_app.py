@@ -6,8 +6,13 @@ import cv2
 import numpy as np
 import requests
 from PIL import Image, ImageTk
-
-from dataset.postprocessing import calibrate_camera_from_images, rectify_board
+import chess
+import torch
+from dataset.dataset import ChessMoveFromDiffDataset
+from diff_models import ChessMoveModel, ConvPatchEncoder
+from diff_predict import predict_move
+from dataset.postprocessing import calibrate_camera_from_images, rectify_board, gen_diff
+import os
 
 CAMERA_URL = "http://192.168.10.61:8080/photo.jpg"  # Update IP as needed
 
@@ -17,7 +22,53 @@ chessboard_corners = None
 before_image = None
 after_image = None
 board = None
+last_diff = None
 
+CHECKPOINT = "models/checkpoint_mercurial-stag-264_epoch11.pth"
+ENCODER_CLASS = ConvPatchEncoder
+PREPROCESSING_OUT_SIZE = 224  # Size of the preprocessed images
+PATCH_SIZE = PREPROCESSING_OUT_SIZE // 8  # As used in the dataset loading script
+FINAL_PATCH_SIZE = 32  # Final patch size for the model input
+
+SAVE_DIFF = True  # Set to True to save the diff image for further training
+SAVE_DIFF_PATH = "dataset/diff_real/"  # Path to save the diff image
+SAVE_METADATA_PATH = "dataset/diff_real.csv"  # Path to save the metadata
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = ChessMoveModel(embed_dim=256, encoder_class=ENCODER_CLASS)
+model.load_state_dict(torch.load(CHECKPOINT, map_location=device)["model_state_dict"])
+model.to(device)
+
+if not os.path.exists(SAVE_DIFF_PATH):
+    os.makedirs(SAVE_DIFF_PATH)
+
+NEXT_ID = 0
+
+if not os.path.exists(SAVE_METADATA_PATH):
+    with open(SAVE_METADATA_PATH, "w") as f:
+        f.write("id,move\n")
+else:
+    with open(SAVE_METADATA_PATH, "r") as f:
+        lines = f.readlines()
+        if len(lines) > 1:
+            NEXT_ID = int(lines[-1].split(",")[0]) + 1
+        else:
+            NEXT_ID = 0
+
+
+def get_prediction(diff_image, board_fen):
+    
+    # Resize and normalize the diff image
+    preprocessed_diff_image = ChessMoveFromDiffDataset.preprocess_image(diff_image, preprocess_resize=PREPROCESSING_OUT_SIZE)
+
+    # Split the image into patches
+    patch_tensor = ChessMoveFromDiffDataset.patch_image(preprocessed_diff_image, resize_size=FINAL_PATCH_SIZE)
+
+
+    move, confidence = predict_move(model, patch_tensor, device, board_fen=board_fen)
+    print(f"Predicted move: {move} (confidence: {confidence:.4f})")
+
+    return move
 
 def get_image():
     response = requests.get(CAMERA_URL, timeout=5)
@@ -59,9 +110,26 @@ def capture_board_with_detection():
     except Exception as e:
         messagebox.showerror("Detection Error", str(e))
 
+def save_last_move(last_diff):
+    global NEXT_ID, board
+    move = board.peek()
+
+    # save metadata
+    with open(SAVE_METADATA_PATH, "a") as f:
+        f.write(f"{NEXT_ID},{move.uci()}\n")
+    
+    # save img
+    img_path = os.path.join(SAVE_DIFF_PATH, f"{NEXT_ID}.png")
+    cv2.imwrite(img_path, last_diff)
+
+    NEXT_ID += 1
 
 def capture_move():
-    global before_image, after_image, board
+    global last_diff, before_image, after_image, board
+
+    if SAVE_DIFF and last_diff is not None:
+        save_last_move(last_diff)
+
     try:
         img = get_image()
         if img is None:
@@ -70,9 +138,9 @@ def capture_move():
         after_image = rectify_board(img, chessboard_corners, size=224)
         show_image(after_image)
 
-        # TODO: Retrieve move prediction from model
+        diff_image = gen_diff(before_image, after_image)
 
-        pred_uci = "e2e4"  # Placeholder for predicted move
+        pred_uci = get_prediction(diff_image, board.board_fen())
         move = chess.Move.from_uci(pred_uci)
 
         while not move in board.legal_moves:
@@ -86,14 +154,17 @@ def capture_move():
                 move = chess.Move.from_uci(move_str)
 
         board.push(move)
-        last_move_label.config(text=f"Last move: {move.uci()}")
-        board_fen_label.config(text=f"FEN: {board.fen()}")
+        update_board_display()
         manual_edit_move_btn.config(state=tk.NORMAL)
         label.config(
             text=f"Move captured. Press 'Edit Move' to modify or 'Capture' to capture again. {board.turn == chess.WHITE and 'White' or 'Black'} to move."
         )
         manual_edit_move_btn.config(state=tk.NORMAL)
         capture_btn.config(text="Capture", command=capture_move)
+
+        before_image = after_image.copy()  # Update before_image for the next capture
+        after_image = None  # Reset after_image
+        last_diff = diff_image.copy()  # Save the last diff image for potential saving
 
     except:
         messagebox.showerror(
@@ -104,27 +175,22 @@ def capture_move():
 
 def edit_last_move(initial_text=""):
     global board
-    board.pop()  # Remove the last move
-    last_move_label.config(text="Last move: None")
-    move_str = simpledialog.askstring(
-        "Edit Move",
-        "Enter the move in UCI format (e.g., e2e4):",
-        parent=root,
-        initialvalue=initial_text,
-    )
+    prev_move = board.peek()  # Get the last move without removing it
+    move = None
+    move_str = simpledialog.askstring("Edit Move", "Enter the move in UCI format (e.g., e2e4):", parent=root, initialvalue=initial_text)
     if move_str:
         try:
+            board.pop()  # Remove the last move
             move = chess.Move.from_uci(move_str)
             if move in board.legal_moves:
-                board.push(move)
-                last_move_label.config(text=f"Last move: {move.uci()}")
-                board_fen_label.config(text=f"FEN: {board.fen()}")
+                update_board_display()
             else:
                 messagebox.showerror("Invalid Move", "The move is not legal.")
+                move = prev_move  # Revert to the previous move
         except ValueError:
-            messagebox.showerror(
-                "Invalid Format", "Please enter a valid UCI format move."
-            )
+            messagebox.showerror("Invalid Format", "Please enter a valid UCI format move.")
+        finally:
+            board.push(move or prev_move)  # Push the move back to the board
 
 
 def capture_first():
@@ -165,6 +231,17 @@ def confirm_detected_board():
     capture_btn.config(state=tk.NORMAL)
     capture_btn.config(text="Capture", command=capture_first)
 
+def update_board_display():
+    global board_fen_label, last_move_label
+
+    board_fen = board.board_fen()
+    board_fen_label.config(text=f"FEN: {board_fen}")
+
+    # Display the last move
+    if board.move_stack:
+        last_move_label.config(text=f"Last move: {board.peek().uci()}")
+    else:
+        last_move_label.config(text="Last move: None")
 
 def show_image(img, color=cv2.COLOR_BGR2RGB):
     if img is None:
@@ -183,7 +260,7 @@ def show_image(img, color=cv2.COLOR_BGR2RGB):
 # ---- UI Setup ----
 root = tk.Tk()
 root.title("Chessboard Detection")
-root.geometry("800x600")
+root.geometry("1024x768")
 root.configure(bg="white")
 
 label = tk.Label(
