@@ -282,7 +282,7 @@ with mlflow.start_run() as run:
         )
 
         if val_results["acc"] >  best_val_acc:
-            best_val_acc = best_val_acc
+            best_val_acc = val_results["acc"]
             ckpt_name = f"models/checkpoint_{run_name}_epoch{epoch+1}.pth"
             save_checkpoint(
                 model, optimizer, epoch, path=ckpt_name, best_val_loss=best_val_loss
