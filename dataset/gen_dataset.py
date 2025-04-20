@@ -91,7 +91,7 @@ if __name__ == "__main__":
     # Check if base board generation is needed
     base_board_path_match = rendering.generate_base_boards(RENDER_PATH)
 
-    chessboard_corners = postprocessing.calibrate_camera(base_board_path_match)
+    chessboard_corners = postprocessing.calibrate_camera_from_path_match(base_board_path_match)
 
     if os.path.exists(LAST_PROCESSED_INDEX_FILE):
         with open(LAST_PROCESSED_INDEX_FILE, "r") as f:

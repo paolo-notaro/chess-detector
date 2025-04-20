@@ -11,3 +11,4 @@ torchaudio
 mlflow
 isort
 black
+pillow

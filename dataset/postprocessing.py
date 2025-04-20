@@ -17,11 +17,16 @@ OBJ_SPACE_CORNERS = np.float32([
     [-1, 7, 0]
 ])
 
-def calibrate_camera(path_match):
+def calibrate_camera_from_path_match(path_match):
 
     """ Return the image points of the chessboard corners, calibrated from empty board images from the path match. """
 
-    # termination criteria
+    images = glob.glob(path_match)
+
+    return calibrate_camera_from_images([cv.imread(fname) for fname in images])
+
+def calibrate_camera_from_images(img_list: list):
+            # termination criteria
     criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
     
     # prepare object points, like (0,0,0), (1,0,0), (2,0,0) ....,(6,5,0)
@@ -31,10 +36,8 @@ def calibrate_camera(path_match):
     # Arrays to store object points and image points from all the images.
     objpoints = [] # 3d point in real world space
     imgpoints = [] # 2d points in image plane.
-    images = glob.glob(path_match)
 
-    for fname in images:
-        img = cv.imread(fname)
+    for img in img_list:
         gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
 
         # Find the chess board corners
@@ -61,6 +64,7 @@ def calibrate_camera(path_match):
     imgpts = np.int32(imgpts).reshape(-1,2)
 
     return imgpts
+
 
 
 def rectify_board(img, corners, size=224):

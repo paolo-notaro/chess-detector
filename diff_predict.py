@@ -2,7 +2,7 @@
 import argparse
 import torch
 import cv2 as cv
-from dataset.postprocessing import gen_diff, rectify_board, calibrate_camera
+from dataset.postprocessing import gen_diff, rectify_board, calibrate_camera_from_path_match
 from dataset.dataset import ChessMoveFromDiffDataset
 from dataset.chess_utils import argmax_2d_indices_batch, best_valid_move_from_logits, is_path_fenlike
 from diff_models import ChessMoveModel
@@ -58,7 +58,7 @@ def main(args):
         img_after = cv.imread(args.after)
 
         # Find chessboard corners using base board images
-        chessboard_corners = calibrate_camera("dataset/images/empty_board_*.png")
+        chessboard_corners = calibrate_camera_from_path_match("dataset/images/empty_board_*.png")
         
         # Warp the images to get a top-down view of the chessboard, will also convert to grayscale
         img_before = rectify_board(img_before, chessboard_corners, size=PREPROCESSING_OUT_SIZE)
