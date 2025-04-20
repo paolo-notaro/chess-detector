@@ -7,6 +7,8 @@ import csv
 import os
 import random
 import mlflow
+from metrics import compute_metrics, aggregate_metrics
+
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -30,100 +32,96 @@ else:
 
 criterion = torch.nn.CrossEntropyLoss(reduction="mean")
 
-def train(model, dataloader, optimizer, device):
+def prepare_batch(patch_tensor, label, device):
+    patch_tensor = patch_tensor.to(device) # shape: (B, 64, 1, 32, 32)
+    y_from = label["from"].to(device) # shape: (B,)
+    y_to = label["to"].to(device) # shape: (B,)
+
+    B = patch_tensor.size(0) # batch size
+    gt_idx = y_from * 64 + y_to
+    inverse_idx = y_to * 64 + y_from
+
+    return patch_tensor, gt_idx, inverse_idx, B
+
+
+def train(model, dataloader, optimizer, device) -> dict[str, float]:
+    """
+    Train the model for one epoch.
+
+    Args:
+        model (nn.Module): The model to train.
+        dataloader (DataLoader): DataLoader for the training data.
+        optimizer (torch.optim.Optimizer): Optimizer for the model.
+        device (torch.device): Device to run the model on.
+
+    Returns:
+        dict[str, float]: Dictionary containing several metrics, including:
+            - loss: Average loss for the epoch.
+            - acc: Accuracy of the model on the training data.
+            - acc_incl_inverse: Accuracy including inverse moves.
+            - avg_gt_move_score: Average score for the ground truth move.
+            - avg_inverse_gt_move_score: Average score for the inverse ground truth move.
+            - avg_pred_move_score: Average score for the predicted move.
+    """
     model.train()
-    total_loss = 0
-    correct = 0
-    correct_inverse = 0
-    total = 0
+    all_metrics = []
 
     for patch_tensor, label in (progress_bar := tqdm(dataloader)):
-        patch_tensor = patch_tensor.to(device)  # shape: (B, 64, 1, 32, 32)
-        B = patch_tensor.size(0)  # batch size
-        y_from = label["from"].to(device)
-        y_to = label["to"].to(device)
+        patch_tensor, gt_move_idx, inverse_gt_move_idx, B = prepare_batch(patch_tensor, label, device)
 
-        optimizer.zero_grad()
+        # Forward pass
         scores = model(patch_tensor)  # [B, 64, 64], batch size, from square, to square
-
         scores_flat = scores.view(B, -1)  # [B, 4096]
-        
-        
-        # Flatten (from, to) into single label
-        move_idx = y_from * 64 + y_to  # [B]
-
-        # print(scores[0][y_from[0]][y_to[0]], scores_flat[0][move_idx[0]])
 
         # Compute loss
-        loss = criterion(scores_flat, move_idx)
-
+        loss = criterion(scores_flat, gt_move_idx)
+        optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-        total_loss += loss.item() * B
-        total += patch_tensor.size(0)
+        # Compute metrics
+        metrics = compute_metrics(scores_flat, gt_move_idx, inverse_gt_move_idx, loss_value=loss.item())
+        all_metrics.append(metrics)
 
-        # Accuracy metrics
-        pred_move_idx = scores.view(B, -1).argmax(dim=1)  # predicted flat index
-        true_move_idx = y_from * 64 + y_to
-        inverse_true_move_idx = y_to * 64 + y_from
-
-        correct += (pred_move_idx == true_move_idx).sum().item()
-        correct_inverse += (pred_move_idx == inverse_true_move_idx).sum().item()
-        correct_total = correct + correct_inverse
-        acc = correct / total
-        acc_incl_inverse = correct_total / total
-
-        progress_bar.set_description(
-            f"Train Loss: {total_loss / total:.4f} | Acc: {acc:.2%}, Acc (incl. inverse): {acc_incl_inverse:.2%}")
-
-    avg_loss = total_loss / total
-    acc = correct / total
-
-    return avg_loss, acc, acc_incl_inverse
+        # Update progress bar
+        progress_bar.set_description(f"Batch Loss: {metrics['loss']:.4f}")
 
 
-def evaluate(model, dataloader, device):
+    return aggregate_metrics(all_metrics)
+
+
+def evaluate(model, dataloader, device) -> dict[str, float]:
+    """
+    Evaluate the model on the dataloader.
+
+    Args:
+        model (nn.Module): The model to evaluate.
+        dataloader (DataLoader): DataLoader for the evaluation data.
+        device (torch.device): Device to run the model on.
+    
+    Returns:
+        dict[str, float]: Dictionary containing several metrics, including:
+            - loss: Average loss for the evaluation.
+            - acc: Accuracy of the model on the evaluation data.
+            - acc_incl_inverse: Accuracy including inverse moves.
+    """
+
     model.eval()
-    total_loss = 0
-    correct = 0
-    correct_inverse = 0
-    total = 0
+    all_metrics = []
 
     with torch.no_grad():
-        for patch_tensor, label in dataloader:
-            B = patch_tensor.size(0)  # batch size
-            patch_tensor = patch_tensor.to(device)
-            y_from = label["from"].to(device)
-            y_to = label["to"].to(device)
+        for patch_tensor, label in tqdm(dataloader, desc="Evaluating"):
+            patch_tensor, gt_move_idx, inverse_move_idx, B = prepare_batch(patch_tensor, label, device)
 
             scores = model(patch_tensor)
+            scores_flat = scores.view(B, -1)
 
-            scores_flat = scores.view(B, -1)  # [B, 4096]
+            loss = criterion(scores_flat, gt_move_idx)
 
-            # Flatten (from, to) into single label
-            move_idx = y_from * 64 + y_to  # [B]
-            inverse_move_idx = y_to * 64 + y_from
+            metrics = compute_metrics(scores_flat, gt_move_idx, inverse_move_idx, loss_value=loss.item())
+            all_metrics.append(metrics)
 
-            loss = criterion(scores_flat, move_idx)
-
-            # Compute loss
-            total_loss += loss.item() * B
-            total += B
-                    
-            # Accuracy metrics
-            pred_move_idx = scores.view(B, -1).argmax(dim=1)  # predicted flat index
-            true_move_idx = y_from * 64 + y_to
-
-            correct += (pred_move_idx == true_move_idx).sum().item()
-            correct_inverse += (pred_move_idx == inverse_move_idx).sum().item()
-            correct_total = correct + correct_inverse
-
-    avg_loss = total_loss / total
-    acc = correct / total
-    acc_incl_inverse = correct_total / total
-
-    return avg_loss, acc, acc_incl_inverse
+    return aggregate_metrics(all_metrics)
 
 
 def save_checkpoint(
@@ -147,8 +145,9 @@ def load_checkpoint(model, optimizer, path="checkpoint.pth", device="cpu"):
     optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
     start_epoch = checkpoint["epoch"] + 1  # continue from next epoch
     best_val_loss = checkpoint.get("best_val_loss", float("inf"))
+    best_val_acc = checkpoint.get("best_val_acc", 0.0)
     print(f"📦 Loaded checkpoint from {path}, starting at epoch {start_epoch}")
-    return start_epoch, best_val_loss
+    return start_epoch, best_val_loss, best_val_acc
 
 
 if not os.path.exists("dataset/preprocessed") or not os.path.exists(
@@ -255,37 +254,35 @@ with mlflow.start_run() as run:
     print(f"Val batches per epoch: {len(val_loader)}")
 
     if checkpoint_to_load:
-        start_epoch, best_val_loss = load_checkpoint(
+        start_epoch, best_val_loss, best_val_acc = load_checkpoint(
             model, optimizer, path=checkpoint_to_load, device=device
         )
     else:
-        start_epoch, best_val_loss = 0, float("inf")
+        start_epoch, best_val_loss, best_val_acc = 0, float("inf"), 0
 
     torch.manual_seed(SEED)
     for epoch in range(num_epochs):
-        train_loss, train_acc, train_acc_incl_inverse = train(model, train_loader, optimizer, device)
+        train_results = train(model, train_loader, optimizer, device)
 
-        val_loss, val_acc, val_acc_incl_inverse = evaluate(model, val_loader, device)
+        val_results = evaluate(model, val_loader, device)
 
         print(f"[Epoch {epoch+1}]")
-        print(f" Train Loss: {train_loss:.4f} | Acc: {train_acc:.2%} | Acc (incl. inverse): {train_acc_incl_inverse:.2%}")
-        print(f" Val   Loss: {val_loss:.4f} | Acc: {val_acc:.2%} | Acc (incl. inverse): {val_acc_incl_inverse:.2%}")
+        print(f"Train results: {train_results}")
+        print(f"Val results: {val_results}")
 
         # Log metrics
         mlflow.log_metrics(
             {
-                "train_loss": train_loss,
-                "train_acc": train_acc,
-                "train_acc_incl_inverse": train_acc_incl_inverse,
-                "val_loss": val_loss,
-                "val_acc": val_acc,
-                "val_acc_incl_inverse": val_acc_incl_inverse,
+                **{f"{k}.train": v
+                for k, v in train_results.items()},
+                **{f"{k}.val": v
+                for k, v in val_results.items()},
             },
             step=epoch + 1,
         )
 
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
+        if val_results["acc"] >  best_val_acc:
+            best_val_acc = best_val_acc
             ckpt_name = f"models/checkpoint_{run_name}_epoch{epoch+1}.pth"
             save_checkpoint(
                 model, optimizer, epoch, path=ckpt_name, best_val_loss=best_val_loss
