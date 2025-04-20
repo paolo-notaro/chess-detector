@@ -65,7 +65,32 @@ def calibrate_camera_from_images(img_list: list):
 
     return imgpts
 
+def reorder_points(pts: np.ndarray) -> np.ndarray:
+    """
+    Reorder 4 points to top-left, top-right, bottom-right, bottom-left.
 
+    Parameters:
+        pts (np.ndarray): Array of shape (4, 2)
+
+    Returns:
+        np.ndarray: Reordered array of shape (4, 2)
+    """
+    if pts.shape != (4, 2):
+        raise ValueError("Input must be a (4, 2) array of points")
+
+    pts = pts.astype(np.float32)  # for safety
+
+    # Sum and diff of points
+    s = pts.sum(axis=1)           # x + y
+    d = np.diff(pts, axis=1).flatten()  # x - y
+
+    ordered = np.zeros((4, 2), dtype=np.float32)
+    ordered[0] = pts[np.argmin(s)]      # Top-left
+    ordered[2] = pts[np.argmax(s)]      # Bottom-right
+    ordered[1] = pts[np.argmin(d)]      # Top-right
+    ordered[3] = pts[np.argmax(d)]      # Bottom-left
+
+    return ordered
 
 def rectify_board(img, corners, size=224):
     """
@@ -89,8 +114,10 @@ def rectify_board(img, corners, size=224):
 
     src_pts = np.array(corners, dtype=np.float32)
 
+    ordered_src_pts = reorder_points(src_pts)
+
     # Compute homography
-    matrix = cv.getPerspectiveTransform(src_pts, dst_pts)
+    matrix = cv.getPerspectiveTransform(ordered_src_pts, dst_pts)
     warped = cv.warpPerspective(img, matrix, (size, size))
 
     # Convert to grayscale if needed
