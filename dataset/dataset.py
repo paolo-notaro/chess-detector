@@ -4,6 +4,7 @@ import pandas as pd
 import os
 import cv2
 from dataset import rendering
+from matplotlib import pyplot as plt
 
 SQUARES = [f"{file}{rank}" for rank in range(1, 9) for file in "abcdefgh"]
 SQUARE_TO_IDX = {sq: i for i, sq in enumerate(SQUARES)}
@@ -78,15 +79,26 @@ class ChessMoveFromDiffDataset(Dataset):
             raise FileNotFoundError(f"Image {path} not found.")
 
         img = cv2.resize(img, (224, 224)) if img.shape != (224, 224) else img
+        # cv2.imwrite(f"test/debug_output.png", img)
         img = img.astype('float32') / 255.0
 
         # Split into 64 (32x32) patches
         patches = []
-        for row in range(0, 224, 28):
-            for col in range(0, 224, 28):
-                patch = img[row:row+28, col:col+28]
+        PATCH_SIZE = 28
+        for rank in range(1, 9):
+            for file in "abcdefgh":
+                file_index = ord(file) - ord('a')
+                patch_index = SQUARE_TO_IDX[f"{file}{rank}"]
+                # consider that a1 is in lower right corner
+                row = 7 - file_index
+                col = 8 - rank
+                x = col * PATCH_SIZE
+                y = row * PATCH_SIZE
+                patch = img[y:y + PATCH_SIZE, x:x + PATCH_SIZE]
                 patch = cv2.resize(patch, (32, 32))  # Standardize to 32x32
+                # cv2.imwrite(f"test/debug_output_{patch_index}.png", patch * 255)
                 patch = torch.tensor(patch, dtype=torch.float32).unsqueeze(0)  # (1, 32, 32)
+                # print(f"Patch {patch_index} shape: {patch.shape}, row: {row}, col: {col}, x: {x}, y: {y}")
                 patches.append(patch)
 
         patches_tensor = torch.stack(patches)  # (64, 1, 32, 32)

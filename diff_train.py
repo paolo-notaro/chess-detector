@@ -15,8 +15,10 @@ checkpoint_to_load = None  # "models/checkpoint_hilarious-doe-40_epoch1.pth" or 
 
 LEARNING_RATE = 1e-4
 EMBED_DIM = 256
-BATCH_SIZE = 16
+TRAIN_BATCH_SIZE = 16
+EVAL_BATCH_SIZE = 128
 LIMIT_DATASET = None  # None for no limit, otherwise set to the number of samples to use. To test if overfitting works
+SEED = 42
 
 train_eval_ratio = 0.8
 
@@ -28,14 +30,14 @@ else:
 
 criterion = torch.nn.CrossEntropyLoss()
 
-
 def train(model, dataloader, optimizer, device):
     model.train()
     total_loss = 0
     correct = 0
+    correct_inverse = 0
     total = 0
 
-    for patch_tensor, label in tqdm(dataloader):
+    for patch_tensor, label in (progress_bar := tqdm(dataloader)):
         patch_tensor = patch_tensor.to(device)  # shape: (B, 64, 1, 32, 32)
         B = patch_tensor.size(0)  # batch size
         y_from = label["from"].to(device)
@@ -45,9 +47,12 @@ def train(model, dataloader, optimizer, device):
         scores = model(patch_tensor)  # [B, 64, 64], batch size, from square, to square
 
         scores_flat = scores.view(B, -1)  # [B, 4096]
-
+        
+        
         # Flatten (from, to) into single label
         move_idx = y_from * 64 + y_to  # [B]
+
+        # print(scores[0][y_from[0]][y_to[0]], scores_flat[0][move_idx[0]])
 
         # Compute loss
         loss = criterion(scores_flat, move_idx)
@@ -61,8 +66,13 @@ def train(model, dataloader, optimizer, device):
         # Accuracy metrics
         pred_move_idx = scores.view(B, -1).argmax(dim=1)  # predicted flat index
         true_move_idx = y_from * 64 + y_to
+        inverse_true_move_idx = y_to * 64 + y_from
 
         correct += (pred_move_idx == true_move_idx).sum().item()
+        correct_inverse += (pred_move_idx == inverse_true_move_idx).sum().item()
+        correct_total = correct + correct_inverse
+        progress_bar.set_description(
+            f"Train Loss: {total_loss / total:.4f} | Acc: {correct / total:.2%}, Acc (incl. inverse): {correct_total / total:.2%}")
 
     avg_loss = total_loss / total
     acc = correct / total
@@ -187,7 +197,7 @@ with mlflow.start_run() as run:
     mlflow.log_param("num_epochs", num_epochs)
     mlflow.log_param("train_eval_ratio", train_eval_ratio)
     mlflow.log_param("learning_rate", LEARNING_RATE)
-    mlflow.log_param("batch_size", BATCH_SIZE)
+    mlflow.log_param("batch_size", TRAIN_BATCH_SIZE)
     mlflow.log_param("checkpoint_to_reload", checkpoint_to_load)
     mlflow.log_param("device", device.type)
     mlflow.log_param("starting_checkpoint", checkpoint_to_load)
@@ -211,10 +221,10 @@ with mlflow.start_run() as run:
     )
 
     train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=BATCH_SIZE, shuffle=True
+        train_dataset, batch_size=TRAIN_BATCH_SIZE, shuffle=True
     )
     val_loader = torch.utils.data.DataLoader(
-        val_dataset, batch_size=BATCH_SIZE, shuffle=False
+        val_dataset, batch_size=EVAL_BATCH_SIZE, shuffle=False
     )
 
     print(f"Train dataset size: {len(train_dataset)}")
@@ -230,6 +240,7 @@ with mlflow.start_run() as run:
     else:
         start_epoch, best_val_loss = 0, float("inf")
 
+    torch.manual_seed(SEED)
     for epoch in range(num_epochs):
         train_loss, train_acc = train(model, train_loader, optimizer, device)
 

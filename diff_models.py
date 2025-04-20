@@ -27,15 +27,15 @@ class PatchEncoder(nn.Module):
 
 
 class MoveScorer(nn.Module):
-    def __init__(self, embed_dim=128):
+    def __init__(self, embed_dim=128, proj_size=32):
         super().__init__()
-        self.from_proj = nn.Linear(embed_dim, 64)
-        self.to_proj = nn.Linear(embed_dim, 64)
+        self.from_proj = nn.Linear(embed_dim, proj_size)
+        self.to_proj = nn.Linear(embed_dim, proj_size)
 
     def forward(self, embeddings):
-        # embeddings: [B, 64, D]
-        from_vecs = F.normalize(self.from_proj(embeddings), dim=-1)  # [B, 64, 64]
-        to_vecs = F.normalize(self.to_proj(embeddings), dim=-1)  # [B, 64, 64]
+        # embeddings: [B, 64, embed_dim]
+        from_vecs = F.normalize(self.from_proj(embeddings), dim=-1)  # [B, 64, proj_size]
+        to_vecs = F.normalize(self.to_proj(embeddings), dim=-1)  # [B, 64, proj_size]
 
         # Compute pairwise move scores using batched matrix multiplication
         scores = torch.matmul(from_vecs, to_vecs.transpose(1, 2))  # [B, 64, 64]
