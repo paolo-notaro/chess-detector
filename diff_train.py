@@ -28,7 +28,7 @@ else:
     print(f"Using {device}")
 
 
-criterion = torch.nn.CrossEntropyLoss()
+criterion = torch.nn.CrossEntropyLoss(reduction="mean")
 
 def train(model, dataloader, optimizer, device):
     model.train()
@@ -71,19 +71,23 @@ def train(model, dataloader, optimizer, device):
         correct += (pred_move_idx == true_move_idx).sum().item()
         correct_inverse += (pred_move_idx == inverse_true_move_idx).sum().item()
         correct_total = correct + correct_inverse
+        acc = correct / total
+        acc_incl_inverse = correct_total / total
+
         progress_bar.set_description(
-            f"Train Loss: {total_loss / total:.4f} | Acc: {correct / total:.2%}, Acc (incl. inverse): {correct_total / total:.2%}")
+            f"Train Loss: {total_loss / total:.4f} | Acc: {acc:.2%}, Acc (incl. inverse): {acc_incl_inverse:.2%}")
 
     avg_loss = total_loss / total
     acc = correct / total
 
-    return avg_loss, acc
+    return avg_loss, acc, acc_incl_inverse
 
 
 def evaluate(model, dataloader, device):
     model.eval()
     total_loss = 0
     correct = 0
+    correct_inverse = 0
     total = 0
 
     with torch.no_grad():
@@ -99,23 +103,27 @@ def evaluate(model, dataloader, device):
 
             # Flatten (from, to) into single label
             move_idx = y_from * 64 + y_to  # [B]
+            inverse_move_idx = y_to * 64 + y_from
 
             loss = criterion(scores_flat, move_idx)
 
             # Compute loss
             total_loss += loss.item() * B
             total += B
-
+                    
             # Accuracy metrics
             pred_move_idx = scores.view(B, -1).argmax(dim=1)  # predicted flat index
             true_move_idx = y_from * 64 + y_to
 
             correct += (pred_move_idx == true_move_idx).sum().item()
+            correct_inverse += (pred_move_idx == inverse_move_idx).sum().item()
+            correct_total = correct + correct_inverse
 
     avg_loss = total_loss / total
     acc = correct / total
+    acc_incl_inverse = correct_total / total
 
-    return avg_loss, acc
+    return avg_loss, acc, acc_incl_inverse
 
 
 def save_checkpoint(
@@ -242,21 +250,23 @@ with mlflow.start_run() as run:
 
     torch.manual_seed(SEED)
     for epoch in range(num_epochs):
-        train_loss, train_acc = train(model, train_loader, optimizer, device)
+        train_loss, train_acc, train_acc_incl_inverse = train(model, train_loader, optimizer, device)
 
-        val_loss, val_acc = evaluate(model, val_loader, device)
+        val_loss, val_acc, val_acc_incl_inverse = evaluate(model, val_loader, device)
 
         print(f"[Epoch {epoch+1}]")
-        print(f" Train Loss: {train_loss:.4f} | Acc: {train_acc:.2%}")
-        print(f" Val   Loss: {val_loss:.4f} | Acc: {val_acc:.2%}")
+        print(f" Train Loss: {train_loss:.4f} | Acc: {train_acc:.2%} | Acc (incl. inverse): {train_acc_incl_inverse:.2%}")
+        print(f" Val   Loss: {val_loss:.4f} | Acc: {val_acc:.2%} | Acc (incl. inverse): {val_acc_incl_inverse:.2%}")
 
         # Log metrics
         mlflow.log_metrics(
             {
                 "train_loss": train_loss,
                 "train_acc": train_acc,
+                "train_acc_incl_inverse": train_acc_incl_inverse,
                 "val_loss": val_loss,
-                "val_acc_": val_acc,
+                "val_acc": val_acc,
+                "val_acc_incl_inverse": val_acc_incl_inverse,
             },
             step=epoch + 1,
         )

@@ -93,8 +93,8 @@ def rectify_board(img, corners, size=224):
     if len(warped.shape) == 3:
         warped = cv.cvtColor(warped, cv.COLOR_BGR2GRAY)
 
-    # Normalize to [0, 1]
-    warped = warped.astype(np.float32) / 255.0
+    # Convert to float32
+    warped = warped.astype(np.float32)
 
     return warped
 
@@ -122,5 +122,5 @@ def process_image(frompath, chessboard_corners):
     return img
 
 def save_image(img, topath):
-    cv.imwrite(topath, img * 255.0)
+    cv.imwrite(topath, img)
     print(f"Image {topath} saved.")

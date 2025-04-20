@@ -23,7 +23,7 @@ ERRORS_FILE = os.path.abspath(r"./errors.txt")
 # Generation settings
 BATCH_SIZE = 1 # Entries processed before saving state
 
-DELETE_RENDERED = True # Delete rendered images after processing
+DELETE_RENDERED = False # Delete rendered images after processing
 GEN_DIFF = True # Generate diff images
 
 SUPPRESS_BLENDER_OUTPUT = False # Suppress Blender output
