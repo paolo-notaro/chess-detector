@@ -156,9 +156,7 @@ def predict():
     # Check if the image is grayscale and has the correct size
     if len(in_image.shape) != 2 or in_image.shape[0] != 224 or in_image.shape[1] != 224:
         return make_response(jsonify({"error": "Image must be grayscale and size 224x224"}), 400)
-    
-    tensor = ChessMoveFromDiffDataset.patch_image(in_image).to(device)
-    
+        
     board_fen = data.get("board_fen", None)
     
     turn = data.get("turn", "wb")
