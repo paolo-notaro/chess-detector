@@ -77,7 +77,7 @@ def begin_session():
         model.to(device)
         LOADED_MODELS[(model_name, checkpoint_name)] = model
 
-    response = make_response(jsonify({"session_id": session_id}))
+    response = make_response(jsonify({"sessionId": session_id}))
     response.set_cookie("session_id", session_id, httponly=True)
     return response
 
@@ -101,12 +101,13 @@ def get_models():
     """
         Returns a list of available models and their checkpoints.
     """
-    models_info = {}
+    models_info = list()
     for model_name, model_info in AVAILABLE_MODELS.items():
-        models_info[model_name] = {
+        models_info.append({
+            "name": model_name,
             "description": model_info["description"],
-            "available-checkpoints": model_info["available-checkpoints"]
-        }
+            "availableCheckpoints": model_info["available-checkpoints"]
+        })
     return jsonify(models_info)
 
 
@@ -170,11 +171,13 @@ def predict():
     if not isinstance(topk, int) or topk < 1:
         return make_response(jsonify({"error": "Topk must be a positive integer"}), 400)
 
-    prediction = AVAILABLE_MODELS[model_name]["predict"](
+    predictions = AVAILABLE_MODELS[model_name]["predict"](
         model, in_image, board_fen, turn, topk
     )
 
-    response = make_response(jsonify({"prediction": prediction}))
+    predictions = [{'moveUci': pred[0], 'confidence': pred[1]} for pred in predictions]
+
+    response = make_response(jsonify(predictions))
     response.headers["Content-Type"] = "application/json"
     return response
 
