@@ -12,3 +12,4 @@ mlflow
 isort
 black
 pillow
+flask
