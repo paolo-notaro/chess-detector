@@ -31,7 +31,7 @@ LOADED_MODELS = {
 AVAILABLE_MODELS = {
     "conv-encoder-256-v1": {
         "description": "Chess Move Diff Prediction Model with Conv Encoder",
-        "create_model": ChessMoveModel(embed_dim=256, encoder_class=ConvPatchEncoder),
+        "create_model": lambda: ChessMoveModel(embed_dim=256, encoder_class=ConvPatchEncoder),
         "predict" : lambda model, in_image, board_fen, turn, topk: predict_move(
                 model, ChessMoveFromDiffDataset.patch_image(ChessMoveFromDiffDataset.preprocess_image(in_image, 224), 32), device, board_fen=board_fen, turn=turn, topk=topk
             ),
@@ -70,7 +70,7 @@ def begin_session():
 
     # If the model/checkpoint is already loaded, reuse it
     if (model_name, checkpoint_name) not in LOADED_MODELS:
-        model = AVAILABLE_MODELS[model_name]["create_model"]
+        model = AVAILABLE_MODELS[model_name]["create_model"]()
         model.load_state_dict(
             torch.load(f"models/checkpoint_{checkpoint_name}.pth", map_location=device)["model_state_dict"]
         )
@@ -118,7 +118,7 @@ def predict():
         Request body format:
         {
             "image": "base64 encoded grayscale PNG image, size 224x224" [Required],
-            "board_fen": <FEN string of the board before the move> [Default null],
+            "boardFen": <FEN string of the board before the move> [Default null],
             "turn": <'w', 'b' or 'wb'> [Default 'wb'],
             "topk": <number of top moves to return> [Default 1]
         }
@@ -157,7 +157,7 @@ def predict():
     if len(in_image.shape) != 2 or in_image.shape[0] != 224 or in_image.shape[1] != 224:
         return make_response(jsonify({"error": "Image must be grayscale and size 224x224"}), 400)
         
-    board_fen = data.get("board_fen", None)
+    board_fen = data.get("boardFen", None)
     
     turn = data.get("turn", "wb")
 
