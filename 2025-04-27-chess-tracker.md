@@ -284,11 +284,31 @@ Realizing the network should focus only on *what was moved*, we ditched the Siam
 We had an aha-moment: a legal move only changes two squares*: one goes empty, one gets a visitor. So instead of letting a big CNN stare at the whole board, we applied a magnifying glass over every square and asked, "Did **you** change?" 
 It's like running 64 tiny analyses rather than one blurry wide-angle shot.
 
+But in order for this to work, cells need to be comparable across images. So we needed to make sure that the images were aligned and that the pieces were in the same position in both images.
+
+This is where the **homography** comes in. We used OpenCV to compute a homography matrix that maps the corners of the chessboard in the first image to the corners of the chessboard in the second image. This allows us to warp the images so that they are aligned.
+
+In short, the new pipeline looks like this:
+1. **Offline calibration** – use OpenCV to compute a homography matrix that maps the corners of the chessboard in the first image to the corners of the chessboard in the second image.
+2. **Capture before / after frames** – take a picture of the board before and after the move.
+3. **Pre-process** – warp the images using the homography matrix, convert to grayscale, and normalize.
+4. **Diff** – compute the absolute difference between the two images and normalize it.
+5. **Slice into 64 patches** – crop the diff image into 64 patches, one for each square on the board.
+6. **PatchEncoder** – apply a small CNN to each patch to extract features.
+7. **MoveScorer** – compute a similarity score between the patches to predict the move.
+8. **Legality filter** – use a chess engine (like python-chess) to check if the predicted move is legal.
+9. **Output** – if the move is legal, update the board state and continue to the next turn.
+10. **Save the game** – save the moves and board state to a PGN file for later analysis.
+11. **Repeat** – go back to step 2 until the game is over.
+
 *Note: this is not _entirely_ true, as some moves can involve more than two squares (e.g. castling, en-passant, and promotions). However, these cases are rare and can be handled separately.
+
+
+In particular, we took the following steps:
 
 ### Step 1: adapt our data generation pipeline
 
-We add one more step at the end of the data generation pipeline:
+We add one more step at the end of the data generation pipeline, to standardize images across poses and compute difference between before and after frames.
 
 ```python
 def gen_diff(before_img, after_img, binary=False, binary_threshold=30):
@@ -304,13 +324,15 @@ diff_img = postprocessing.gen_diff(before_img, after_img)
 postprocessing.save_image(diff_img, os.path.join(DIFF_PATH, f"{i}.png"))
 ```
 
-In this way we generate __diff images__ that highlight the changes between the "before" and "after" board states. These images are saved in the `diff` directory and can be used for tasks like move prediction or board state classification.
+In this way we generate standardized __diff images__ that highlight the changes between the "before" and "after" board states. These images are saved in the `diff` directory and can be used for tasks like move prediction or board state classification.
+
+[diff image example]
 
 ### Step 2: adapt our model
 
 We ditched the Siamese network and moved to a new architecture, which we call **PatchEncoder**. This model has two key differences: 
 1) focuses on the __differences between the two images__, by applying a small CNN  directly to the diff image, 
-2) operates on __patches__, i.e. crops of the diff image, which contain the pixels of a single square.
+2) __operates on patches__, i.e. cell-wise crops of the diff image, which contain the pixels of a single square.
 
 Here is the rough patching algorithm:
 
@@ -373,11 +395,12 @@ class ConvPatchEncoder(nn.Module):
 
 ```
 
-This forces the model to focus on learning whether a square was involved in the move or not, rater.
+This forces the model to focus on learning whether a square was involved in the move or not, rather than trying to learn the whole board state.
 
-### Step 3: Adapt our Move Scorer
+### Step 3: Adapt our Move Predictor
 
-We also changed the way we score the final moves.
+We also changed the way we compute the final move
+.
 In our new **MoveScorer** model, we use an attention-like mechanism to compute the relationship between the 64 cells of the board. The model takes the 64 cell embeddings from the **PatchEncoder** and
 1) adds positional encodings to each patch to retain spatial information
 2) computes two linear projections of the embeddings: one for the "from" square and one for the "to" square. This enforces the model to learn the relationship between the patches and the move.
@@ -433,41 +456,58 @@ class ChessMoveModel(nn.Module):
 
 The final prediction scores of shape [64, 64] are then passed to a legality filter (using `python-chess`) to check if the most likely move is legal. If it is, we can update the board state and continue to the next turn.
 
-### Pipeline in Detail: Δ is the Way
 
-To sum up, the new pipeline looks like this:
-
-   4.1  Offline calibration (4 corner homography)  
-   4.2  Capturing before / after frames  
-   4.3  Pre-processing  
-        • warp → grayscale 224²  
-        • abs-diff → normalise  
-        • slice into 64 patches → 32²  
-   4.4  **PatchEncoder** (code snippet - tiny CNN)  
-   4.5  **MoveScorer**  
-        – add 64-slot positional encodings  
-        – from_proj · to_projᵀ  →  64 × 64 logits ÷ temperature  
-   4.6  Legality filter with python-chess (or Stockfish)  
-   4.7  Output: UCI move, board state advances
-
-# Training & Results
-   •  20 k Blender renders → 95 % top-2 synth  
-   •  Early real-world test set → 60 % top-1  
-   •  600 k params ≈ Raspberry-Pi friendly
-
-# Strengths, Weaknesses, Next Steps
-   ✔  Works on any board / pieces  
-   ✔  Zero extra hardware  
-   ✘  Lighting + camera nudge hurt diff map  (we need an online tracker, would also reduce the need for calibration)
-   ✘  Promotions not yet handled  
-   Roadmap: train on bigger real dataset, augmentation, dual-exposure trick, promotion head revival and experiment with online board tracking
-
-# Takeaways (fun-size bullets)
-   •  Synthetic renders > hand labelling  
-   •  Localise the learning target → small nets rock  
+## Training and Results
 
 
-**Sensors? Nah. We're running this game on raw RGB.**
+
+## Putting It All Together: Create a User-Friendly Chess Tracker App
+
+Having the model work with good accuracy is great, but we also need to make it user-friendly and easy to use. In particular, we need to make sure that the app can be used in real-time, with minimal setup and configuration.
+
+We create a simple GUI app with tkinter that allows the user to:
+* calibrate the board (get the corners of the chessboard)
+* record a move (take a picture of the board before and after the move)
+* display the predicted move
+* display the current board state
+* save the game to a PGN file
+
+The main components of the app are:
+1. **Tripod** – a simple tripod to hold the smartphone camera in place. The camera should be positioned above the board, with a clear view of all squares. We typically apply it on the left side, point at about 60 degrees angle down and at few centimenters from the board.
+
+1. **Camera** – use a smartphone with an IP camera app (like DroidCam) to stream the video to the computer. The app captures frames from the camera and processes them in real-time.
+
+2. **Computer** – a laptop or desktop computer running the app. The app receives frames from the camera, processes them, and displays the predicted move. It also helps the user to calibrate the board, track the state of the game and save the game to a PGN file.
+
+
+
+## Strengths, Weaknesses & Next Steps
+
+**✔ Strengths**  
+* Works on *any* board, any pieces, no fancy RFID or magnets required.  
+* Zero extra hardware – just your phone cam, a tripod, and a laptop.
+
+**✘ Weaknesses**  
+* Finicky lighting or a tiny tripod bump can scramble the diff image.  
+* Pawn promotions? Still on our TODO list (sorry, under-appreciated queens).
+
+**On our Roadmap**  
+1. **Bigger real-world dataset** – cafés, club nights, dodgy basement lighting.  
+2. **Aggressive augmentation** – glare jitter, motion blur, piece style swaps.  
+3. **Dual-exposure trick** – snap twice, merge for better low-light diff maps.  
+4. **Promotion-head revival** – give pawns their rightful upgrade path.  
+5. **Online board tracker** – continual pose re-calibration to shrug off nudges.
+
+---
+
+## Fun-Size Takeaways
+
+* **Synthetic > manual** – Blender renders beat hours of hand-labeling of real images
+* **Zoom then learn** - focus on the changed squares and even tiny CNNs can shine  
+* **Simple beats slick** – two photos + clever math trump sensor-stuffed boards  
+
+
+> **Sensors? Nah. We’re running this game on raw RGB.**
 
 
 Big thanks to [Lorenzo Notaro](https://github.com/lorenzonotaro1) for being my companion on this project, his help with the Blender pipeline and support in the long brainstorming and debugging sessions (besides, you have a better GPU than I have).
