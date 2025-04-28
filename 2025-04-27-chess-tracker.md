@@ -1,12 +1,12 @@
 ---
 title: Building a Vision-only Chess Tracker
-tags: [Computer Vision, PyTorch, Python, Rendering, Blender, Chess]
+tags: [Computer Vision, PyTorch, Python, Rendering, Blender, Chess, Flask, Java]
 style: fill
 color: primary
-description: tried to improve our chess skills and ended up learning more about image tracking, rendering and training vision models
+description: we tried to improve our chess skills and ended up learning more about image tracking, rendering and training vision models
 ---
 
-#### _We wanted to build an app to track chess games and improve our play skills, and ended up learning more about image tracking, rendering and training vision models_
+#### _we tried to improve our chess skills and ended up learning more about image tracking, rendering and training vision models_
 
 # Introduction: what is this about?
 
@@ -33,7 +33,7 @@ So of course, I said yes.
 <figure style="margin: 2em auto; text-align: center; max-width: 100%;">
   <img 
     src="/blog/images/chess-tracker/chessboard.jpg" 
-    alt="A chessboard in the initia game configuration." 
+    alt="A chessboard in the initial game configuration." 
     style="width: 50%; height: auto; border-radius: 8px;" 
   />
   <figcaption style="margin-top: 0.5em; font-size: 0.95em; color: var(--text-muted-color);">
@@ -64,7 +64,7 @@ We figured a minimal setup we already owned - basically a phone camera, a tripod
 In short, we said *"no, thanks"* to sensor boards, because
 
 * Extra hardware is awkward to carry around and takes effort to maintain/set up  
-* Most open places where you can play chess (parks, cafés, clubs) won't ditch their trusty wooden sets / boards  
+* Most open places where you can play chess (parks, cafés, clubs) won't ditch their own wooden sets / boards  
 * A decent camera lives in every pocket, so why not use it?
 
 
@@ -81,50 +81,41 @@ However, a camera-only approach comes with its own challenges, such as microscop
 
 As you will see, some of these issues are easy to solve with a bit of clever engineering, while others are more challenging and still bug us today.
 But let's not get ahead of ourselves.
-
-## What you will find in this article
-
-1. The different ideas we tried - and why some of them flopped  
-2. The key insight that set us on the right path  
-3. A step-by-step tour of the working pipeline, from board calibration to move prediction  
-4. Results, quirks, and what comes next
-
-
 Pull up a chair - we are about to make plain black-and-white images speak fluent chess.
 
 > As always, you can {% include elements/button.html link="https://github.com/paolo-notaro/chess-detector" text="Check out the project on GitHub" style="primary" size="sm" %}
 
 
-# Our Journey towards a Camera-Only Chess Tracker
+# Our Journey towards a Vision-Only Chess Tracker
 
-*(aka "how many wrong turns can you take on 64 squares?")*
 
 Before we could gloriously fail with neural networks, we needed a game plan. So tried to decompose the problem into smaller pieces:
 - **Global goal: track the whole game** → means keeping an accurate board state after every turn. Which means:
-- **Get board state after a turn** = board state *before* + **the move** that just happened.
--  **Move detection** → give the model two images (before / after) and ask,  "Which square just emptied and which one just filled?", basically obtaining the move in UCI format (e.g. *e2e4*, *b7b8q*, etc.).
-- **Move validation** → even a clever model can hallucinate illegal jumps, so we must validate its guesses with a chess engine and keep only the legal moves in the current board state.
-- **State update** → apply that validated move to our running board, then repeat from step 1 until handshake or checkmate.
+  - **Get board state after a turn** = board state *before* + **the move** that just happened.
+    -  **Move detection** → give the model two images (before / after) and ask,  "Which square just emptied and which one just filled?", basically obtaining the move in UCI format (e.g. *e2e4*, *b7b8q*, etc.).
+    - **Move validation** → even a clever model can hallucinate illegal jumps, so we must validate its guesses with a chess engine and keep only the legal moves in the current board state.
+   - **State update** → apply that validated move to our running board, then repeat from step 1 until handshake or checkmate.
 
-Implementation note: after all the above logic is implemented, we can simply record the taken moves and intermediate board positions into a standardized format (like PGN) and use it to analyze the game later on. Thi step is not covered in this post, but it is the final step of the pipeline.
+> Quick note: after all the above logic is implemented, we can simply record the taken moves and intermediate board positions into a standardized format (like PGN) and use it to analyze the game later on. Thi step is not deeply covered in this post, but it is a straightforward yet important step of the pipeline.
 
-## First Attempt at Prediction: The Siamese Net That Said “gg ez” On Our Dataset  
+## First Attempt: The SiameseNet  
 
-<figure style="margin: 2em auto; text-align: center; max-width: 100%;">
-  <img 
-    src="/blog/images/chess-tracker/initial-idea.png" 
-    alt="Diagram of the Siamese network architecture for chess tracking (first idea)" 
-    style="width: 100%; height: auto; border-radius: 8px;" 
-  />
-  <figcaption style="margin-top: 0.5em; font-size: 0.95em; color: var(--text-muted-color);">
-    Diagram of the Siamese network architecture (first idea).
+<figure style="margin:2em auto; max-width:100%; text-align:center;">
+  <img
+    src="/blog/images/chess-tracker/initial-idea.png"
+    alt="Siamese network architecture from our first chess-tracking attempt"
+    loading="lazy"
+    style="max-width:100%; height:auto; border-radius:8px;"
+  >
+  <figcaption style="margin-top:0.5em; font-size:0.95em; color:#666;">
+    The SiameseNet architecture we tried first.
   </figcaption>
 </figure>
 
+We started with a (possibly too) simple idea: shove the **before** and **after** move images through a **singe encoder network**, concatenate the embeddings generated by the encoder together, and ask an MLP to predict the move in UCI format, i.e., *from-square*, *to-square*, and *promotion*.
+Such double-headed model is called a **Siamese network** (SiameseNet for us).
 
-We started with a (possibly too) simple idea: shove the **before** and **after** images through the **same encoder network**, concatenate the embeddings together, and ask an MLP to predict the move in UCI format, i.e., *from-square*, *to-square*, and *promotion*.
-
-You can see the diagram above for a simplified version of [this](https://github.com/paolo-notaro/chess-detector/image_pairs_models.py) pipeline.
+You can see the diagram above for a simplified version of the [SiameseNet](https://github.com/paolo-notaro/chess-detector/image_pairs_models.py) pipeline.
 
 Here is a quick overview of our code:
 
@@ -135,23 +126,16 @@ class SmallCNNEncoder(nn.Module):
     def __init__(self, output_dim=256):
         super().__init__()
         self.encoder = nn.Sequential(
-            nn.Conv2d(
-                1, 16, kernel_size=5, stride=2, padding=2
-            ),  # -> [B, 16, 112, 112]
+            nn.Conv2d(1, 16, kernel_size=5, stride=2, padding=2),  # -> [B, 16, 112, 112]
             nn.ReLU(),
             nn.MaxPool2d(2),  # -> [B, 16, 56, 56]
-            nn.Conv2d(16, 32, kernel_size=3, padding=1),  # -> [B, 32, 56, 56]
-            nn.ReLU(),
-            nn.MaxPool2d(2),  # -> [B, 32, 28, 28]
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),  # -> [B, 64, 28, 28]
-            nn.ReLU(),
+            ... # some more layers
             nn.AdaptiveAvgPool2d((1, 1)),  # -> [B, 64, 1, 1]
         )
         self.fc = nn.Linear(64, output_dim)
 
     def forward(self, x):
-        x = self.encoder(x)
-        x = x.view(x.size(0), -1)
+        x = self.encoder(x).view(x.size(0), -1)
         return self.fc(x)
 
 # Actual move prediction model (SiameseNet)
@@ -159,25 +143,15 @@ class ChessMovePredictor(nn.Module):
     def __init__(
         self, embedding_dim=256, encoder_class: Type[nn.Module] = SmallCNNEncoder
     ):
-        """
-        ~400k total params
-        Args:
-            embedding_dim (int): Dimension of the embedding.
-            encoder_class (Type[nn.Module]): Class of the encoder to use.
-        """
         super().__init__()
         ...
         self.encoder = encoder_class(output_dim=embedding_dim)
-
         # MLP head
         self.mlp = nn.Sequential(
             nn.Linear(embedding_dim * 2, 512),
             nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(512, 256),
-            nn.ReLU(),
+            ...
         )
-
         # Output heads
         self.from_head = nn.Linear(256, 64)
         self.to_head = nn.Linear(256, 64)
@@ -187,47 +161,72 @@ class ChessMovePredictor(nn.Module):
         emb_before = self.encoder(before)  # [B, D]
         emb_after = self.encoder(after)  # [B, D]
         combined = torch.cat([emb_before, emb_after], dim=1)  # [B, 2D]
-
         x = self.mlp(combined)  # [B, 256]
-
         from_logits = self.from_head(x)  # [B, 64]
         to_logits = self.to_head(x)  # [B, 64]
         promotion_logits = self.promotion_head(x)  # [B, 5]
-
         return from_logits, to_logits, promotion_logits
 ```
 
-For embedding extraction, we tried different architectures, including our own Convolutional Neural Network (CNN), [ResNet18](https://pytorch.org/vision/0.20/models/generated/torchvision.models.resnet18.html) and Vision Transformer (ViT), but the first one was the most promising.
+For the encoder network, we tried different architectures, including our own Convolutional Neural Network (CNN), [ResNet18](https://pytorch.org/vision/0.20/models/generated/torchvision.models.resnet18.html) and Vision Transformers(ViT), but the first one was the most promising.
 
 ## Data Generation process
 
 In order to train the model, we needed a dataset of chess positions, with corresponding images, and annotations of the moves that were made.
-We generated a dataset of circa 20k chess positions, using the [Blender](https://www.blender.org/) rendering engine. The pipeline was as follows:
+We generated a dataset of circa 20k chess positions, using the [Blender](https://www.blender.org/) rendering engine. The generation pipeline is as follows:
 
 ### Step 1: Downloading and Analyzing Chess Games
 
-The process begins by downloading chess games from Lichess using the `download_and_select_moves` function. The script fetches a large dataset of games and analyzes them to extract moves. Users can specify the percentage of moves to retain and set a minimum count for each move type. The selected moves are shuffled and saved to a CSV file (`entries.csv`) for further processing.
-
-```python
-moves = download_and_select_moves()
-with open(MOVES, "w") as moves_file:
-    moves_file.write("before_fen,move_uci,after_fen\n")
-    for before_id, move, after_id in moves:
-        moves_file.write(f"{before_id},{move},{after_id}\n")
-```
+We download chess games from [Lichess](lichess.com). Our script fetches a large dataset of games and analyzes them to extract moves. We can specify the percentage of moves to retain and set a minimum count for each move type. The selected moves are shuffled and saved to a CSV file (`entries.csv`) for further processing.
+For each move in the dataset, the script uses the FEN (Forsyth-Edwards Notation) strings to represent the board states before and after the move. 
 
 ---
 
-### Step 2: Processing Chess Moves
+### Step 2: Rendering Chess Move Configurations with Blender
 
-For each move in the dataset, the script uses the FEN (Forsyth-Edwards Notation) strings to render the board states before and after the move. Blender generates images of these board states, which are then processed using OpenCV to rectify the perspective and normalize the images. The processed images are saved in the `preprocessed` directory.
+We use Blender to synthesize images of these board states in a tripod-realistic scenario (side shoot, 30-degree-ish angle downwards looking).
+We generate a variety of renders, differing in board look, piece style, and lighting conditions. This helps the model generalize better to different environments (see examples below).
 
-```python
-before_img = postprocessing.process_image(os.path.join(RENDER_PATH, f"{before_board_id}.png"), chessboard_corners)
-postprocessing.save_image(before_img, os.path.join(PREPROCESS_PATH, f"{before_board_id}.png"))
-```
+<figure style="display:flex; gap:20px; flex-wrap:wrap; justify-content:center;">
+  <img
+    src="/blog/images/chess-tracker/24658_render_before.png"
+    alt="Rendered board before move b3c2"
+    style="width:48%; border-radius:8px;"
+  >
+  <img
+    src="/blog/images/chess-tracker/24658_render_after.png"
+    alt="Rendered board after move b3c2"
+    style="width:48%; border-radius:8px;"
+  >
 
-We generate a variety of images, differing in board look, piece style, and lighting conditions. This helps the model generalize better to different environments.
+  <!-- flex-basis:100% forces caption onto its own row -->
+  <figcaption style="flex-basis:100%; text-align:center; margin-top:8px;">
+  Examples of frames rendered by Blender, before and after the move <code>b3c2</code>.
+  </figcaption>
+</figure>
+
+
+Finally, the board renders are pre-processed using OpenCV to rectify the perspective and normalize the images. The processed images are saved in the `preprocessed` directory. This is how the images look like after pre-processing:
+
+<figure style="display:flex; gap:20px; flex-wrap:wrap; justify-content:center;">
+  <img
+    src="/blog/images/chess-tracker/24658_processed_before.png"
+    alt="Pre-processed board before move b3c2"
+    loading="lazy"
+    style="max-width:48%; border-radius:8px;"
+  >
+  <img
+    src="/blog/images/chess-tracker/24658_processed_after.png"
+    alt="Pre-processed board after move b3c2"
+    loading="lazy"
+    style="max-width:48%; border-radius:8px;"
+  >
+
+  <!-- flex-basis:100% pushes caption onto its own row -->
+  <figcaption style="flex-basis:100%; text-align:center; margin-top:8px;">
+    Rendered frames after preprocessing (rectification, grayscaling, resizing) for move <code>b3c2</code>
+  </figcaption>
+</figure>
 
 ---
 
@@ -237,6 +236,7 @@ The generated images and move data are used to create PyTorch datasets. For exam
 
 ```python
 class ChessMoveDatasetFromCSV(Dataset):
+  ...
     def __getitem__(self, idx):
         before_tensor = self._load_image(before_id)
         after_tensor = self._load_image(after_id)
@@ -248,40 +248,66 @@ class ChessMoveDatasetFromCSV(Dataset):
         return before_tensor, after_tensor, label
 ```
 
-## So, what went wrong?
+## Step 4: Training the Model
 
-[]
+We train the model using the generated dataset. As usual, we split the dataset into training and validation sets, and use the validation set to monitor the model's performance during training. The model is [trained](https://github.com/paolo-notaro/chess-detector/blob/main/train.py) using a standard cross-entropy loss function (one for each predicting head), and we use an Adam optimizer with a fixed learning rate (<code>1e-4</code>) and a batch size of 32.
 
-Our network simply couldn't learn the task. We tried different architectures, hyperparameters, and training strategies, but the model just wouldn't generalize. 
+The training process involves feeding the model pairs of images (before and after the move) and their corresponding labels. The model learns to predict the move based on the visual changes between the two images.
+
+## Our First Experiments
+
+### What we monitored  
+
+We monitored the three following curves in our MLFlow dashboard:
+
+| **Metric** | **Why we care** |
+|--------|-------------|
+| Training accuracy | Are we actually learning? |
+| Validation loss | Early warning for overfitting |
+| Validation accuracy | Top-1 hit rate on the synthetic hold-out set. |
+
+## So, what happened?
+
+<figure style="display:flex; gap:20px; flex-wrap:wrap; justify-content:center;">
+  <img
+    src="/blog/images/chess-tracker/train_acc_from.png"
+    alt=""
+    loading="lazy"
+    style="max-width:48%; border-radius:8px;"
+  >
+  <img
+    src="/blog/images/chess-tracker/train_acc_to.png"
+    alt=""
+    loading="lazy"
+    style="max-width:48%; border-radius:8px;"
+  >
+
+  <!-- flex-basis:100% pushes caption onto its own row -->
+  <figcaption style="flex-basis:100%; text-align:center; margin-top:8px;">
+    Training accuracy for the <code>from</code> and <code>to</code> heads of the model, over three different runs. As you can see, the model learns to predict moves from the training set with a fairly good accuracy (>35% each, over dozens of possibly illegal moves).
+  </figcaption>
+</figure>
+
+However, our network simply couldn't generalize to the task. We tried different architectures, hyperparameters, and training strategies, but the model just would just overfit the training set. 
 We also figured it could be due to exceeding model capacity - so we reduce the number of parameters and tried again, but the results were still disappointing.
-We ended up with a model that was overfitting like crazy, and we couldn't figure out why.
 
-| Symptom | Evidence |
-|---------|----------|
-| **Training loss flat-lined near 0** | The model memorised the 20 k synthetic boards in no time. |
-| **Validation accuracy ≈ coin-flip** | Outside that set, it guessed like a tired chess novice. |
+This lead us to rethink about the approach. We came up with three main reasons why the model was failing:
+1. **Global features drown tiny changes** – ResNet focuses on fine-grained patterns (blobs, edge); but cell-shifted pieces hardly relate to these patterns  
+2. **20k renders are small for a full-image model** – easy to overfit on board textures and camera angle.  
+3. **Too difficult to satisfy** – the MLP had to learn piece legality *and* visual change in one shot.
 
-### Autopsy Notes  
+Our key takeaway: **we should detect the *change*, not the pieces or the board.**
 
-1. **Global features drown tiny changes** – ResNet focuses on colour blobs and edges; one shifted pawn hardly registers.  
-2. **20 k renders are small for a full-image model** – easy to overfit on board textures and camera angle.  
-3. **One head to rule them all** – the MLP had to learn piece legality *and* visual change in one shot.
+We realized the network should focus only on *what was moved*, we ditched the Siamese idea and moved toward our diff-patch pipeline - the one you'll meet in the next section.
 
-> **Key takeaway → Detect the *change*, not the *pieces*.**
-
-*(Yes, the Blender pipeline that created those 20k boards almost stayed the same.  
+*(Yes, the Blender pipeline we used to create those 20k boards almost stayed the same.  
 We’ll revisit data synthesis in the sections below.)*
-
-#### Pivot Time  
-
-Realizing the network should focus only on *what was moved*, we ditched the Siamese idea and moved toward our diff-patch pipeline - the one you'll meet in the next section.
-
 
 ## The Aha! Moment – Go Small, Go Local, Go Δ
 
-*"RIP SiameseNet (2024-2024) ✝️”*
+*"RIP SiameseNet (2025-2025) ✝️”*
 
-We had an aha-moment: a legal move only changes two squares*: one goes empty, one gets a visitor. So instead of letting a big CNN stare at the whole board, we applied a magnifying glass over every square and asked, "Did **you** change?" 
+Suddenly, we had a realization moment: **a legal move only changes two squares***: one goes empty, one gets a a new piece. So instead of letting a big CNN stare at the whole board, we could apply a magnifying glass over every square and ask, "Did **you** change?" 
 It's like running 64 tiny analyses rather than one blurry wide-angle shot.
 
 But in order for this to work, cells need to be comparable across images. So we needed to make sure that the images were aligned and that the pieces were in the same position in both images.
@@ -304,60 +330,52 @@ In short, the new pipeline looks like this:
 *Note: this is not _entirely_ true, as some moves can involve more than two squares (e.g. castling, en-passant, and promotions). However, these cases are rare and can be handled separately.
 
 
-In particular, we took the following steps:
-
-### Step 1: adapt our data generation pipeline
+### Step 1: Adapt Our Data Generation Pipeline
 
 We add one more step at the end of the data generation pipeline, to standardize images across poses and compute difference between before and after frames.
 
-```python
-def gen_diff(before_img, after_img, binary=False, binary_threshold=30):
-    diff_img = cv.absdiff(before_img, after_img)
+```python    
+diff_img = cv.absdiff(before_img, after_img)
 
-    if binary:
-        _, diff_img_binary = cv.threshold(diff_img, binary_threshold, 255, cv.THRESH_BINARY)
-        return diff_img_binary
-    else:
-        return diff_img
-
-diff_img = postprocessing.gen_diff(before_img, after_img)
-postprocessing.save_image(diff_img, os.path.join(DIFF_PATH, f"{i}.png"))
+if binary:
+    _, diff_img_binary = cv.threshold(diff_img, binary_threshold, 255, cv.THRESH_BINARY)
+    return diff_img_binary
+else:
+    return diff_img
 ```
 
 In this way we generate standardized __diff images__ that highlight the changes between the "before" and "after" board states. These images are saved in the `diff` directory and can be used for tasks like move prediction or board state classification.
 
-[diff image example]
+<figure style="display:flex; gap:20px; flex-wrap:wrap; justify-content:center;">
+  <img
+    src="/blog/images/chess-tracker/26460_processed_before.png"
+    alt="Pre-processed board before move b3c2"
+    loading="lazy"
+    style="max-width:31%; border-radius:8px;"
+  >
+  <img
+    src="/blog/images/chess-tracker/26460_processed_after.png"
+    alt="Pre-processed board after move b3c2"
+    loading="lazy"
+    style="max-width:31%; border-radius:8px;"
+  >
+  <img
+    src="/blog/images/chess-tracker/26460_diff.png"
+    alt="Diff image move b3c2"
+    loading="lazy"
+    style="max-width:31%; border-radius:8px;"
+  >
+  <!-- flex-basis:100% pushes caption onto its own row -->
+  <figcaption style="flex-basis:100%; text-align:center; margin-top:8px;">
+    Example of diff image computation for the Bishop move <code>c8g4</code> (before, after, and diff images).
+  </figcaption>
+</figure>
 
-### Step 2: adapt our model
+### Step 2: Adapt Our Model
 
 We ditched the Siamese network and moved to a new architecture, which we call **PatchEncoder**. This model has two key differences: 
 1) focuses on the __differences between the two images__, by applying a small CNN  directly to the diff image, 
 2) __operates on patches__, i.e. cell-wise crops of the diff image, which contain the pixels of a single square.
-
-Here is the rough patching algorithm:
-
-```python
-def patch_image(img: np.ndarray, resize_size: int = None) -> torch.Tensor:
-    # Split into 64 (32x32) patches
-    patches = []
-    PATCH_SIZE = img.shape[0] // 8  # e.g. input size 224 // 8 = 28
-    for rank in range(1, 9):
-        for file in "abcdefgh":
-            file_index = ord(file) - ord('a')
-            patch_index = SQUARE_TO_IDX[f"{file}{rank}"]
-            # consider that a1 is in lower right corner
-            row = 7 - file_index
-            col = 8 - rank
-            x = col * PATCH_SIZE
-            y = row * PATCH_SIZE
-            patch = img[y:y + PATCH_SIZE, x:x + PATCH_SIZE]
-            ...
-            patch = torch.tensor(patch, dtype=torch.float32).unsqueeze(0)  # (1, 32, 32)
-            patches.append(patch)
-
-    patches = torch.stack(patches)  # (64, 1, 32, 32)
-    return patches
-```
 
 The new **PatchEncoder** model takes the diff image as input (cropped into 64 patches) and applies a series of convolutional layers to extract features. The output is a set of embeddings for each patch, which are then used to predict the move.
 Here is the rough code for the **PatchEncoder** model:
@@ -372,11 +390,7 @@ class ConvPatchEncoder(nn.Module):
             nn.ReLU(),
             nn.MaxPool2d(2),  # [B, 32, 16, 16]
             nn.Conv2d(32, 64, kernel_size=3, padding=1),  # [B, 64, 16, 16]
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.MaxPool2d(2),  # [B, 64, 8, 8]
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),  # [B, 128, 8, 8]
-            nn.BatchNorm2d(128),
+            ... # many more layers
             nn.ReLU(),
             nn.MaxPool2d(2),  # [B, 128, 4, 4]
         )
@@ -399,12 +413,14 @@ This forces the model to focus on learning whether a square was involved in the 
 
 ### Step 3: Adapt our Move Predictor
 
-We also changed the way we compute the final move
-.
+We also changed the way we compute the final move.
 In our new **MoveScorer** model, we use an attention-like mechanism to compute the relationship between the 64 cells of the board. The model takes the 64 cell embeddings from the **PatchEncoder** and
-1) adds positional encodings to each patch to retain spatial information
-2) computes two linear projections of the embeddings: one for the "from" square and one for the "to" square. This enforces the model to learn the relationship between the patches and the move.
-2) computes a similarity score between the "from" and "to" projections, which is then used to predict the move. The output is a 64x64 matrix of logits, which represents the similarity between each pair of patches. These logits are then divided by a learned temperature parameter to control the sharpness of the distribution.
+
+1) adds *positional encodings* to each patch to retain spatial information
+
+2) computes two linear projections of the embeddings: one for the <code>from</code> square and one for the <code>to</code> square. This enforces the model to learn the relationship between the patches and the move.
+
+3) computes a dot product similarity score between the <code>from</code> and <code>to</code> projections, which is then interpreted as the move score. These dot-product logits are then divided by a learned temperature parameter to control the sharpness of the distribution.
 
 This is the rough implementation of the **MoveScorer** model:
 
@@ -447,25 +463,91 @@ class ChessMoveModel(nn.Module):
     def forward(self, patches: torch.Tensor) -> torch.Tensor:
         # patches: [B, 64, C, H, W]
         embeddings = self.encoder(patches)  # [B, 64, embed_dim]
-        embeddings = embeddings + self.positional_encoding.unsqueeze(
-            0
-        )  # [B, 64, embed_dim]
+        embeddings = embeddings + self.positional_encoding.unsqueeze(0)  # [B, 64, embed_dim]
         scores = self.scorer(embeddings)  # [B, 64, 64]
         return scores
 ```
 
-The final prediction scores of shape [64, 64] are then passed to a legality filter (using `python-chess`) to check if the most likely move is legal. If it is, we can update the board state and continue to the next turn.
+The final move prediction scores of shape <code>[64 x 64]</code> (from-to pairs) are then passed to a legality filter (using `python-chess`) to find the first legal move (in decreasing order of likelihood). Given this move, we can update the board state and continue to the next turn.
 
 
-## Training and Results
+<figure style="margin:2em auto; max-width:100%; text-align:center;">
+  <img
+    src="/blog/images/chess-tracker/final-idea.png"
+    alt="Siamese network architecture from our first chess-tracking attempt"
+    loading="lazy"
+    style="max-width:100%; height:auto; border-radius:8px;"
+  >
+  <figcaption style="margin-top:0.5em; font-size:0.95em; color:#666;">
+    The diff-patch-image architecture we settled for in the end.
+  </figcaption>
+</figure>
 
+## Training & Results — the Diff-Patch Network In the Wild
 
+In addition to the three metrics we tracked in the previous section, we added one more to help us understand how the model is performing:
+
+| **Avg. GT-move score** | Mean softmax score assigned to the *correct* move - tells us how confident the model is even when it's right. |
+
+*(Each colored line is one training run with a different hyperparam config; the funky MLFlow names stayed in.)*
+
+---
+
+### What the curves say  
+
+<figure style="text-align: center;">
+  <img src="/blog/images/chess-tracker/loss.val.png" alt="Validation Loss  Deep Learning Chess Tracker" style="max-width:100%;">
+  <figcaption style="margin-top: 0.5em;">Validation loss over several runs, with our second idea (<code>MoveScorer</code>)</figcaption>
+</figure>
+
+* **Text-book convergence, with U-shape = over-fit.** Validation cross-entropy free-falls from 2.x to <0.9 in 10 steps, then creeps up.  
+* The orange run occasionally spikes above 3.5 — we traced those to learning-rate bursts; easy fix with a milder schedule.
+
+<figure style="text-align: center;">
+  <img src="/blog/images/chess-tracker/acc.val.png" alt="Validation Accuracy  Deep Learning Chess Tracker" style="max-width:100%;">
+  <figcaption style="margin-top: 0.5em;">Validation Accuracy over several runs, with our second idea (<code>MoveScorer</code>)</figcaption>
+</figure>
+
+* **Rapid climb, early plateau.** All runs surge from ≈0.45 → 0.65 in the first 10 steps, then level around **0.71 – 0.73**.  
+* The best run (blue) keeps nudging upward, flirting with **0.77** by step 10.
+
+<figure style="text-align: center;">
+  <img src="/blog/images/chess-tracker/avg_gt_move_score.val.png" alt="Average ground-truth (GT) score Deep Learning Chess Tracker" style="max-width:100%;">
+  <figcaption style="margin-top: 0.5em;">Average validation ground-truth (GT) score over several runs, with our second idea (<code>MoveScorer</code>)</figcaption>
+</figure>
+
+* Confidence rises with accuracy: GT-move prob climbs from 0.58 → **0.74** and stays there.  
+* Orange run again shows confidence dips that match the loss spikes.
+
+* An alternative logging confirms a **~0.77 top-1 and a 0.95 top-2 ceiling** for the most stable seed - not bad at all for a 650k-param network.
+
+* We also evaluated the model on a small set of real-world images (taken with a smartphone camera) and achieved around **60% accuracy** on the first try.
+
+---
+
+### TL;DR performance  
+
+| Dataset | Top-1 | Top-2 | Note |
+|---------|-------|-------|------|
+| **Synthetic validation (20k positions)** | **0.77** | **0.95** | After 30 training steps, before over-fit kicks in |
+
+---
+
+### Other Observations  
+
+* **Fast learning**: most of the lift happens in <15 minutes on a Nvidia RTX 3090.  
+* **Early-stop sweet-spot**: stepping out around epoch 30 captures peak val-acc *and* lowest val-loss.  
+
+**Outcome? ** 
+A 650k-param network (617k for the encoder alone) that nails **¾ of synthetic moves in one shot** on synthetic boards and still lands **around 60 %** on first-try real photos.
+
+Next steps: bigger real dataset, hardcore augmentation, and that long-promised promotion head.
 
 ## Putting It All Together: Create a User-Friendly Chess Tracker App
 
 Having the model work with good accuracy is great, but we also need to make it user-friendly and easy to use. In particular, we need to make sure that the app can be used in real-time, with minimal setup and configuration.
 
-We create a simple GUI app with tkinter that allows the user to:
+We create a simple GUI app with Java Swing that allows the user to:
 * calibrate the board (get the corners of the chessboard)
 * record a move (take a picture of the board before and after the move)
 * display the predicted move
@@ -473,44 +555,61 @@ We create a simple GUI app with tkinter that allows the user to:
 * save the game to a PGN file
 
 The main components of the app are:
-1. **Tripod** – a simple tripod to hold the smartphone camera in place. The camera should be positioned above the board, with a clear view of all squares. We typically apply it on the left side, point at about 60 degrees angle down and at few centimenters from the board.
+1. **Tripod** – a simple tripod to hold the smartphone camera in place. The camera should be positioned above the board, with a clear view of all squares. We typically apply it on the left side, point at about 60 degrees angle down and at few centimeters from the board.
 
 1. **Camera** – use a smartphone with an IP camera app (like DroidCam) to stream the video to the computer. The app captures frames from the camera and processes them in real-time.
 
-2. **Computer** – a laptop or desktop computer running the app. The app receives frames from the camera, processes them, and displays the predicted move. It also helps the user to calibrate the board, track the state of the game and save the game to a PGN file.
+2. **Computer** – a laptop or desktop computer running the app. The app receives frames from the camera (through a Flask-hosted API), processes them, and displays the predicted move. It also helps the user to calibrate the board, track the state of the game and save the game to a PGN file.
 
+<div style="display: flex; gap: 20px; flex-wrap: wrap; justify-content: center;">
+  <img 
+    src="/blog/images/chess-tracker/Screenshot 2025-04-28 110925.png" 
+    alt="Chess Tracker GUI 1 Deep Learning Chess Tracker" 
+    style="width:48%; border-radius:8px;"
+  >
+  <img 
+    src="/blog/images/chess-tracker/Screenshot 2025-04-28 111438.png" 
+    alt="Chess Tracker GUI 2 Deep Learning Chess Tracker"
+    style="width:48%; border-radius:8px;"
+  >
+
+  <!-- flex-basis:100% pushes caption onto its own row -->
+  <figcaption style="flex-basis:100%; text-align:center; margin-top:8px;">
+    Screenshots of the GUI app, showing the board state, the predicted move, the diff image.
+  </figcaption>
+</div>
 
 
 ## Strengths, Weaknesses & Next Steps
 
 **✔ Strengths**  
-* Works on *any* board, any pieces, no fancy RFID or magnets required.  
-* Zero extra hardware – just your phone cam, a tripod, and a laptop.
+* Works on *any* board, any pieces, no fancy RFID or magnets required  
+* Zero extra hardware – just your phone cam, a tripod, and a laptop
 
 **✘ Weaknesses**  
-* Finicky lighting or a tiny tripod bump can scramble the diff image.  
-* Pawn promotions? Still on our TODO list (sorry, under-appreciated queens).
+* Finicky lighting or a tiny tripod bump can scramble the diff image
+* Pawn promotions? Still on our TODO list (sorry, under-appreciated queens)
 
 **On our Roadmap**  
-1. **Bigger real-world dataset** – cafés, club nights, dodgy basement lighting.  
-2. **Aggressive augmentation** – glare jitter, motion blur, piece style swaps.  
-3. **Dual-exposure trick** – snap twice, merge for better low-light diff maps.  
-4. **Promotion-head revival** – give pawns their rightful upgrade path.  
-5. **Online board tracker** – continual pose re-calibration to shrug off nudges.
+1. **Bigger real-world dataset** – parks, clubs, dodgy basement lighting 
+2. **Aggressive augmentation** – glare jitter, motion blur, piece style swaps 
+3. **Dual-exposure trick** – snap twice, merge for better low-light diff maps 
+4. **Promotion-head revival** – give pawns their rightful upgrade path
+5. **Online board tracker** – continual pose re-calibration to shrug off nudges
 
 ---
 
 ## Fun-Size Takeaways
 
-* **Synthetic > manual** – Blender renders beat hours of hand-labeling of real images
+* **Synthetic > manual** - Blender renders beat hours of hand-labeling of real images
 * **Zoom then learn** - focus on the changed squares and even tiny CNNs can shine  
-* **Simple beats slick** – two photos + clever math trump sensor-stuffed boards  
+* **Simple beats slick** - two photos + clever math trump sensor-stuffed boards  
 
 
 > **Sensors? Nah. We’re running this game on raw RGB.**
 
 
-Big thanks to [Lorenzo Notaro](https://github.com/lorenzonotaro1) for being my companion on this project, his help with the Blender pipeline and support in the long brainstorming and debugging sessions (besides, you have a better GPU than I have).
+_Big thanks to [Lorenzo Notaro](https://github.com/lorenzonotaro) for being my companion on this project, his help with the Blender pipeline and support in the long brainstorming and debugging sessions (besides, you have a better GPU than I have)._
 
 
 # References
