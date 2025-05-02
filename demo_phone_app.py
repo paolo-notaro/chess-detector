@@ -14,7 +14,10 @@ from diff_predict import predict_move
 from dataset.postprocessing import calibrate_camera_from_images, rectify_board, gen_diff
 import os
 
-CAMERA_URL = "http://192.168.10.61:8080/photo.jpg"  # Update IP as needed
+CAMERA_URL = None  # Update IP as needed, e.g. "http://<camera_ip>/photo.jpg"
+
+if CAMERA_URL is None:
+    raise ValueError("Camera URL is not set. Please set the CAMERA_URL variable.")
 
 CAPTURE_CALIB_IMGS = 5  # Number of images to capture for calibration
 
