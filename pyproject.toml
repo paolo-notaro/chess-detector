@@ -1,0 +1,101 @@
+[tool.poetry]
+name = "chess-detector"
+version = "0.2.0"
+description = "Detect chess moves from camera images of a physical board."
+authors = [
+    "Lorenzo Notaro <lorenzo.notaro1@gmail.com>",
+    "Paolo Notaro <paolo.notaro@outlook.com>",
+]
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/lorenzonotaro/chess-detector"
+repository = "https://github.com/lorenzonotaro/chess-detector"
+keywords = ["chess", "computer-vision", "pytorch", "blender"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+packages = [
+    { include = "chess_detector", from = "src" },
+    { include = "demos" },
+]
+
+[tool.poetry.dependencies]
+python = ">=3.11,<4.0"
+chess = ">=1.10"
+flask = ">=3.0"
+mlflow = ">=2.10"
+numpy = "<2.0"
+opencv-python = ">=4.8"
+pandas = ">=2.0"
+pillow = ">=10.0"
+requests = ">=2.31"
+torch = ">=2.2"
+torchvision = ">=0.17"
+tqdm = ">=4.66"
+zstandard = ">=0.22"
+bpy = { version = "4.3.0", optional = true, python = ">=3.11,<3.12" }
+
+[tool.poetry.extras]
+dataset = ["bpy"]
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.0.0"
+ruff = ">=0.7"
+ty = ">=0.0.1a5"
+
+[tool.poetry.scripts]
+chess-detector-gen-dataset = "chess_detector.data.gen_dataset:main"
+chess-detector-train-diff = "chess_detector.training.train_diff:main"
+chess-detector-train-pair = "chess_detector.training.train_pair:main"
+chess-detector-predict = "chess_detector.inference.predict:main"
+chess-detector-api = "chess_detector.api.http:main"
+chess-detector-demo-phone = "demos.phone_app:main"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "demos", "scripts"]
+extend-exclude = ["dataset/images", "dataset/preprocessed", "dataset/diff"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+    "RUF", # ruff-specific
+]
+ignore = [
+    "E501", # line length handled by ruff format
+    "B008", # function calls in argument defaults (common in PyTorch)
+    "B904", # raise from inside except clause - too noisy for now
+]
+
+[tool.ruff.lint.per-file-ignores]
+"demos/**/*.py" = ["E402"]
+"scripts/**/*.py" = ["E402", "F841"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.ty.environment]
+python-version = "3.11"
+
+[tool.ty.src]
+include = ["src", "demos", "scripts"]
+exclude = ["src/chess_detector/data/rendering.py"]

@@ -174,8 +174,10 @@ cython_debug/
 .pypirc
 
 # IDE folders
-.vscode/
 .idea/
+
+# uv
+.python-version
 
 # Large dataset files
 dataset/images
@@ -195,10 +197,14 @@ diff_real.csv
 entries*.csv
 errors.txt
 
-# Model checkpoints
+# Model checkpoints (anchored to repo root to avoid clashing with src/chess_detector/models/)
 *.pth
-models
+/models/
 
 # mlflow
 mlruns
-test
+
+# Cleanup scratch files
+core_files.txt
+stat.txt
+.env
