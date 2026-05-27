@@ -18,9 +18,10 @@ def compute_metrics(scores_flat, gt_idx, inverse_idx, loss_value: float) -> dict
             "gt_score_sum": probs[range(B), gt_idx].sum().item(),
             "inverse_gt_score_sum": probs[range(B), inverse_idx].sum().item(),
             "pred_score_sum": probs[range(B), pred_idx].sum().item(),
-            "count": B
+            "count": B,
         }
-    
+
+
 def aggregate_metrics(metrics_list: list[dict[str, float]]) -> dict[str, float]:
     agg = defaultdict(float)
     total_count = 0

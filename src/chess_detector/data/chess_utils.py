@@ -1,7 +1,7 @@
 """chess_utils.py: Utility functions for chess move prediction and validation."""
 
+from collections.abc import Callable
 from os.path import basename
-from typing import Callable, List, Optional, Tuple
 
 import chess
 import torch
@@ -10,6 +10,7 @@ SQUARES = [f"{file}{rank}" for rank in range(1, 9) for file in "abcdefgh"]
 PROMOTIONS = ["", "q", "r", "b", "n"]
 SQUARE_TO_IDX = {sq: i for i, sq in enumerate(SQUARES)}
 PROMOTION_TO_IDX = {"": 0, "q": 1, "r": 2, "b": 3, "n": 4}
+MoveValidator = Callable[..., bool]
 
 
 def to_uci(from_idx: int, to_idx: int, promo_index: int = 0) -> str:
@@ -57,7 +58,7 @@ def from_uci(move: str) -> tuple[int, int, int]:
     return from_idx, to_idx, promo_index
 
 
-def argmax_2d_indices_batch(tensor: torch.Tensor) -> list[tuple[int, int]]:
+def argmax_2d_indices_batch(tensor: torch.Tensor) -> list[tuple[int, int, float]]:
     """
     Return a list of (from_idx, to_idx, confidence) for each item in a [B, 64, 64] tensor.
 
@@ -75,12 +76,12 @@ def argmax_2d_indices_batch(tensor: torch.Tensor) -> list[tuple[int, int]]:
     flat_idx = flattened_tensor.argmax(dim=1)
     from_idx = flat_idx // 64
     to_idx = flat_idx % 64
-    confidence = flattened_tensor.max(dim=1)
-    return list(zip(from_idx.tolist(), to_idx.tolist(), confidence.tolist()))
+    confidence = flattened_tensor.max(dim=1).values
+    return list(zip(from_idx.tolist(), to_idx.tolist(), confidence.tolist(), strict=True))
 
 
 def is_move_valid(
-    from_idx: int, to_idx: int, board_fen: str = None, turn: str = "wb"
+    from_idx: int, to_idx: int, board_fen: str | None = None, turn: str = "wb"
 ) -> bool:
     """
     Check if the move from from_idx to to_idx is valid.
@@ -106,11 +107,11 @@ def is_move_valid(
 
 def topk_valid_moves_from_logits(
     logits: torch.Tensor,
-    move_validator: Callable[[int, int, Optional[str]], bool] = is_move_valid,
-    board_fen: Optional[str] = None,
+    move_validator: MoveValidator = is_move_valid,
+    board_fen: str | None = None,
     turn: str = "wb",
     topk: int = 5,
-) -> List[Tuple[int, int, float]]:
+) -> list[tuple[int, int, float]]:
     """
     Returns the top-k valid (from_idx, to_idx, confidence) tuples from logits[64, 64],
     skipping invalid moves.
@@ -134,9 +135,7 @@ def topk_valid_moves_from_logits(
     for flat_idx in sorted_indices:
         from_idx = flat_idx // 64
         to_idx = flat_idx % 64
-        if move_validator(
-            from_idx.item(), to_idx.item(), board_fen=board_fen, turn=turn
-        ):
+        if move_validator(from_idx.item(), to_idx.item(), board_fen=board_fen, turn=turn):
             confidence = probs[flat_idx].item()
             valid_moves.append((from_idx.item(), to_idx.item(), confidence))
             if len(valid_moves) == topk:
@@ -151,7 +150,7 @@ def topk_valid_moves_from_logits(
 def best_valid_move_from_logits(
     logits: torch.Tensor,
     move_validator=is_move_valid,
-    board_fen: str = None,
+    board_fen: str | None = None,
     turn: str = "wb",
 ) -> tuple[int, int, float]:
     """
@@ -175,9 +174,7 @@ def best_valid_move_from_logits(
     for flat_idx in sorted_indices:
         from_idx = flat_idx // 64
         to_idx = flat_idx % 64
-        if move_validator(
-            from_idx.item(), to_idx.item(), board_fen=board_fen, turn=turn
-        ):
+        if move_validator(from_idx.item(), to_idx.item(), board_fen=board_fen, turn=turn):
             confidence = probs[flat_idx].item()
             return from_idx.item(), to_idx.item(), confidence
 
@@ -223,9 +220,7 @@ def is_path_fenlike(file_path: str) -> bool | str:
     fen_string = basename(file_path)
     fen_string = fen_string.replace("_", "/").replace(".png", "")
 
-    if fen_string.count("/") == 7 and all(
-        char in "rnbqkpRNBQKP12345678/" for char in fen_string
-    ):
+    if fen_string.count("/") == 7 and all(char in "rnbqkpRNBQKP12345678/" for char in fen_string):
         # Check if the FEN string is valid
         try:
             chess.Board(fen_string)

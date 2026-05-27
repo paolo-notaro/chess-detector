@@ -1,4 +1,7 @@
-"""diff_train.py: Train a model to predict chess moves from image patches."""
+"""Train the diff-based chess move model.
+
+This module is invoked as the ``chess-detector-train-diff`` console script.
+"""
 
 import csv
 import os
@@ -8,10 +11,10 @@ import mlflow
 import torch
 from tqdm import tqdm
 
-from dataset import dataset
-from diff_models import ChessMoveModel, ConvPatchEncoder
-from image_pairs_models import count_params
-from metrics import aggregate_metrics, compute_metrics
+from chess_detector.data import dataset
+from chess_detector.models.diff import ChessMoveModel, ConvPatchEncoder
+from chess_detector.models.pair import count_params
+from chess_detector.training.metrics import aggregate_metrics, compute_metrics
 
 encoder_class = ConvPatchEncoder  # or ResnetPatchEncoder
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -25,9 +28,7 @@ TRAIN_BATCH_SIZE = 16
 EVAL_BATCH_SIZE = 128
 
 # To test if overfitting works
-LIMIT_DATASET = (
-    None  # None for no limit, otherwise set to the number of samples to use.
-)
+LIMIT_DATASET = None  # None for no limit, otherwise set to the number of samples to use.
 
 SEED = 42
 
@@ -141,9 +142,7 @@ def evaluate(model, dataloader, device) -> dict[str, float]:
     return aggregate_metrics(all_metrics)
 
 
-def save_checkpoint(
-    model, optimizer, epoch, best_val_loss: float, path="models/checkpoint.pth"
-):
+def save_checkpoint(model, optimizer, epoch, best_val_loss: float, path="models/checkpoint.pth"):
     torch.save(
         {
             "epoch": epoch,
@@ -167,20 +166,26 @@ def load_checkpoint(model, optimizer, path="checkpoint.pth", device="cpu"):
     return start_epoch, best_val_loss, best_val_acc
 
 
-if not os.path.exists("dataset/preprocessed") or not os.path.exists(
-    "dataset/last_index.txt"
-):
-    print("Preprocessed dataset not found, please run dataset/gen_dataset.py first")
-    exit()
+def main() -> None:
+    """Console-script entry point: train the diff-based chess move model."""
+    if not os.path.exists("dataset/preprocessed") or not os.path.exists("dataset/last_index.txt"):
+        print("Preprocessed dataset not found, please run chess-detector-gen-dataset first")
+        return
+
+    _prepare_splits()
+    _run_training()
 
 
-if not os.path.exists("dataset/diff_entries_train.csv") or not os.path.exists(
-    "dataset/diff_entries_eval.csv"
-):
-    with open("dataset/last_index.txt", "r") as f:
+def _prepare_splits() -> None:
+    if os.path.exists("dataset/diff_entries_train.csv") and os.path.exists(
+        "dataset/diff_entries_eval.csv"
+    ):
+        return
+
+    with open("dataset/last_index.txt") as f:
         last_index = int(f.read())
 
-    with open("dataset/entries.csv", "r") as f:
+    with open("dataset/entries.csv") as f:
         entries = [
             (i, row[1])
             for i, row in enumerate(list(csv.reader(f))[1 : last_index + 1])
@@ -205,97 +210,94 @@ if not os.path.exists("dataset/diff_entries_train.csv") or not os.path.exists(
         writer.writerows(entries[split_index:])
 
 
-# Start MLflow run
-mlflow.set_experiment("ChessMovePrediction")
+def _run_training() -> None:
+    os.makedirs("models", exist_ok=True)
+    mlflow.set_experiment("ChessMovePrediction")
 
-with mlflow.start_run() as run:
+    with mlflow.start_run() as run:
+        run_id = run.info.run_id
+        run_name = run.data.tags.get("mlflow.runName", run_id)
+        print(f"Run name: {run_name}")
 
-    run_id = run.info.run_id
-    run_name = run.data.tags.get(
-        "mlflow.runName", run_id
-    )  # fallback to run_id if name not set
+        mlflow.log_param("num_epochs", num_epochs)
+        mlflow.log_param("train_eval_ratio", train_eval_ratio)
+        mlflow.log_param("learning_rate", LEARNING_RATE)
+        mlflow.log_param("batch_size", TRAIN_BATCH_SIZE)
+        mlflow.log_param("checkpoint_to_reload", checkpoint_to_load)
+        mlflow.log_param("device", device.type)
+        mlflow.log_param("starting_checkpoint", checkpoint_to_load)
+        mlflow.log_param("model", "ChessMoveModel")
+        mlflow.log_param("embed_dim", EMBED_DIM)
+        mlflow.log_param("encoder_class", encoder_class.__name__)
 
-    print(f"Run name: {run_name}")
+        model = ChessMoveModel(embed_dim=EMBED_DIM, encoder_class=encoder_class).to(device)
+        optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
-    # Log hyperparameters
-    mlflow.log_param("num_epochs", num_epochs)
-    mlflow.log_param("train_eval_ratio", train_eval_ratio)
-    mlflow.log_param("learning_rate", LEARNING_RATE)
-    mlflow.log_param("batch_size", TRAIN_BATCH_SIZE)
-    mlflow.log_param("checkpoint_to_reload", checkpoint_to_load)
-    mlflow.log_param("device", device.type)
-    mlflow.log_param("starting_checkpoint", checkpoint_to_load)
-    mlflow.log_param("model", "ChessMoveModel")
-    mlflow.log_param("embed_dim", EMBED_DIM)
-    mlflow.log_param("encoder_class", encoder_class.__name__)
+        tot_params = count_params(model, trainable_only=False)
+        trainable_params = count_params(model, trainable_only=True)
+        encoder_params = count_params(model.encoder, trainable_only=True)
+        scorer_params = count_params(model.scorer, trainable_only=True)
+        print(f"Total params: {tot_params}")
+        print(f"Trainable params: {trainable_params}")
+        print(f"Encoder params: {encoder_params}")
+        print(f"Scorer params: {scorer_params}")
 
-    model = ChessMoveModel(embed_dim=EMBED_DIM, encoder_class=encoder_class).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+        mlflow.log_param("total_params", tot_params)
+        mlflow.log_param("trainable_params", trainable_params)
+        mlflow.log_param("encoder_params", encoder_params)
+        mlflow.log_param("scorer_params", scorer_params)
 
-    tot_params = count_params(model, trainable_only=False)
-    trainable_params = count_params(model, trainable_only=True)
-    encoder_params = count_params(model.encoder, trainable_only=True)
-    scorer_params = count_params(model.scorer, trainable_only=True)
-    print(f"Total params: {tot_params}")
-    print(f"Trainable params: {trainable_params}")
-    print(f"Encoder params: {encoder_params}")
-    print(f"Scorer params: {scorer_params}")
-
-    mlflow.log_param("total_params", tot_params)
-    mlflow.log_param("trainable_params", trainable_params)
-    mlflow.log_param("encoder_params", encoder_params)
-    mlflow.log_param("scorer_params", scorer_params)
-
-    train_dataset = dataset.ChessMoveFromDiffDataset(
-        "dataset/diff_entries_train.csv", "dataset/diff", limit=LIMIT_DATASET
-    )
-    val_dataset = dataset.ChessMoveFromDiffDataset(
-        "dataset/diff_entries_eval.csv", "dataset/diff", limit=LIMIT_DATASET
-    )
-
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=TRAIN_BATCH_SIZE, shuffle=True
-    )
-    val_loader = torch.utils.data.DataLoader(
-        val_dataset, batch_size=EVAL_BATCH_SIZE, shuffle=False
-    )
-
-    print(f"Train dataset size: {len(train_dataset)}")
-    print(f"Train batches per epoch: {len(train_loader)}")
-
-    print(f"Val dataset size: {len(val_dataset)}")
-    print(f"Val batches per epoch: {len(val_loader)}")
-
-    if checkpoint_to_load:
-        start_epoch, best_val_loss, best_val_acc = load_checkpoint(
-            model, optimizer, path=checkpoint_to_load, device=device
+        train_dataset = dataset.ChessMoveFromDiffDataset(
+            "dataset/diff_entries_train.csv", "dataset/diff", limit=LIMIT_DATASET
         )
-    else:
-        start_epoch, best_val_loss, best_val_acc = 0, float("inf"), 0
-
-    torch.manual_seed(SEED)
-    for epoch in range(num_epochs):
-        train_results = train(model, train_loader, optimizer, device)
-
-        val_results = evaluate(model, val_loader, device)
-
-        print(f"[Epoch {epoch+1}]")
-        print(f"Train results: {train_results}")
-        print(f"Val results: {val_results}")
-
-        # Log metrics
-        mlflow.log_metrics(
-            {
-                **{f"{k}.train": v for k, v in train_results.items()},
-                **{f"{k}.val": v for k, v in val_results.items()},
-            },
-            step=epoch + 1,
+        val_dataset = dataset.ChessMoveFromDiffDataset(
+            "dataset/diff_entries_eval.csv", "dataset/diff", limit=LIMIT_DATASET
         )
 
-        if val_results["acc"] > best_val_acc:
-            best_val_acc = val_results["acc"]
-            ckpt_name = f"models/checkpoint_{run_name}_epoch{epoch+1}.pth"
-            save_checkpoint(
-                model, optimizer, epoch, path=ckpt_name, best_val_loss=best_val_loss
+        train_loader = torch.utils.data.DataLoader(
+            train_dataset, batch_size=TRAIN_BATCH_SIZE, shuffle=True
+        )
+        val_loader = torch.utils.data.DataLoader(
+            val_dataset, batch_size=EVAL_BATCH_SIZE, shuffle=False
+        )
+
+        print(f"Train dataset size: {len(train_dataset)}")
+        print(f"Train batches per epoch: {len(train_loader)}")
+        print(f"Val dataset size: {len(val_dataset)}")
+        print(f"Val batches per epoch: {len(val_loader)}")
+
+        if checkpoint_to_load:
+            _start_epoch, best_val_loss, best_val_acc = load_checkpoint(
+                model, optimizer, path=checkpoint_to_load, device=device
             )
-            mlflow.log_artifact(ckpt_name)
+        else:
+            _start_epoch, best_val_loss, best_val_acc = 0, float("inf"), 0
+
+        torch.manual_seed(SEED)
+        for epoch in range(num_epochs):
+            train_results = train(model, train_loader, optimizer, device)
+            val_results = evaluate(model, val_loader, device)
+
+            print(f"[Epoch {epoch + 1}]")
+            print(f"Train results: {train_results}")
+            print(f"Val results: {val_results}")
+
+            mlflow.log_metrics(
+                {
+                    **{f"{k}.train": v for k, v in train_results.items()},
+                    **{f"{k}.val": v for k, v in val_results.items()},
+                },
+                step=epoch + 1,
+            )
+
+            if val_results["acc"] > best_val_acc:
+                best_val_acc = val_results["acc"]
+                ckpt_name = f"models/checkpoint_{run_name}_epoch{epoch + 1}.pth"
+                save_checkpoint(
+                    model, optimizer, epoch, path=ckpt_name, best_val_loss=best_val_loss
+                )
+                mlflow.log_artifact(ckpt_name)
+
+
+if __name__ == "__main__":
+    main()

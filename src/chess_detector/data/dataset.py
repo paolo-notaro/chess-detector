@@ -4,11 +4,9 @@ import cv2
 import numpy as np
 import pandas as pd
 import torch
-from matplotlib import pyplot as plt
 from torch.utils.data import Dataset
 
-from dataset import rendering
-from dataset.chess_utils import PROMOTION_TO_IDX, SQUARE_TO_IDX, from_uci
+from chess_detector.data.chess_utils import PROMOTION_TO_IDX, SQUARE_TO_IDX, from_uci
 
 
 class ChessMoveDatasetFromCSV(Dataset):
@@ -27,14 +25,16 @@ class ChessMoveDatasetFromCSV(Dataset):
         path = os.path.join(self.image_dir, f"{image_id}.png")
         img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
         img = cv2.resize(img, (224, 224)) if img.shape != (224, 224) else img
-        img = img.astype('float32') / 255.0
+        img = img.astype("float32") / 255.0
         return torch.from_numpy(img).unsqueeze(0)  # shape: (1, 224, 224)
 
-    def __getitem__(self, idx):
-        row = self.df.iloc[idx]
-        before_id = rendering.get_board_id(row["before_fen"])
+    def __getitem__(self, index):
+        from chess_detector.data.rendering import get_board_id
+
+        row = self.df.iloc[index]
+        before_id = get_board_id(row["before_fen"])
         move_uci = row["move_uci"]
-        after_id = rendering.get_board_id(row["after_fen"])
+        after_id = get_board_id(row["after_fen"])
 
         before_tensor = self._load_image(before_id)
         after_tensor = self._load_image(after_id)
@@ -46,7 +46,7 @@ class ChessMoveDatasetFromCSV(Dataset):
         label = {
             "from": torch.tensor(SQUARE_TO_IDX[from_sq], dtype=torch.long),
             "to": torch.tensor(SQUARE_TO_IDX[to_sq], dtype=torch.long),
-            "promotion": torch.tensor(PROMOTION_TO_IDX.get(promo, 0), dtype=torch.long)
+            "promotion": torch.tensor(PROMOTION_TO_IDX.get(promo, 0), dtype=torch.long),
         }
 
         return before_tensor, after_tensor, label
@@ -71,9 +71,9 @@ class ChessMoveFromDiffDataset(Dataset):
 
     def __len__(self):
         return len(self.df)
-    
+
     @staticmethod
-    def patch_image(img: np.ndarray, resize_size: int = None) -> torch.Tensor:
+    def patch_image(img: np.ndarray, resize_size: int | None = None) -> torch.Tensor:
         """
         Splits a square image into 64 patches of size resize_size and returns them as a tensor.
         The patches are ordered from a1 to h8, with a1 being the bottom left corner.
@@ -82,28 +82,29 @@ class ChessMoveFromDiffDataset(Dataset):
         Args:
             img (np.ndarray): Input image of shape (H, W) where H == W.
             resize_size (int, optional): Size to resize each patch to. Defaults to None.
-        
+
         Returns:
             torch.Tensor: Tensor of shape (64, 1, resize_size, resize_size) containing the patches.
         """
 
         assert img.shape[0] == img.shape[1], f"Expected square image, got {img.shape}"
         assert img.shape[0] % 8 == 0, f"Expected image size divisible by 8, got {img.shape}"
-        assert resize_size is None or resize_size > 0, f"Expected resize size greater than 0, got {resize_size}"
+        assert resize_size is None or resize_size > 0, (
+            f"Expected resize size greater than 0, got {resize_size}"
+        )
 
         # Split into 64 (32x32) patches
         patches = []
         PATCH_SIZE = img.shape[0] // 8  # e.g. input size 224 // 8 = 28
         for rank in range(1, 9):
             for file in "abcdefgh":
-                file_index = ord(file) - ord('a')
-                patch_index = SQUARE_TO_IDX[f"{file}{rank}"]
+                file_index = ord(file) - ord("a")
                 # consider that a1 is in lower right corner
                 row = 7 - file_index
                 col = 8 - rank
                 x = col * PATCH_SIZE
                 y = row * PATCH_SIZE
-                patch = img[y:y + PATCH_SIZE, x:x + PATCH_SIZE]
+                patch = img[y : y + PATCH_SIZE, x : x + PATCH_SIZE]
                 if resize_size and resize_size != PATCH_SIZE:
                     patch = cv2.resize(patch, (resize_size, resize_size))  # Standardize size
                 # cv2.imwrite(f"test/debug_output_{patch_index}.png", patch * 255)
@@ -113,33 +114,41 @@ class ChessMoveFromDiffDataset(Dataset):
 
         patches = torch.stack(patches)  # (64, 1, 32, 32)
         return patches
-    
+
     @staticmethod
-    def preprocess_image(img: np.ndarray, preprocess_resize: int = None) -> np.ndarray:
+    def preprocess_image(img: np.ndarray, preprocess_resize: int | None = None) -> np.ndarray:
         """
         Preprocess the image by resizing it to preprocess_resize x preprocess_resize and normalizing it.
 
         Args:
             img (np.ndarray): Input image of shape (H, W).
             preprocess_resize (int, optional): Size to resize the image to. Defaults to None.
-        
+
         Returns:
             np.ndarray: Preprocessed image.
         """
         assert img.shape[0] == img.shape[1], f"Expected square image, got {img.shape}"
-        assert preprocess_resize is None or preprocess_resize > 0, f"Expected resize size greater than 0, got {preprocess_resize}"
+        assert preprocess_resize is None or preprocess_resize > 0, (
+            f"Expected resize size greater than 0, got {preprocess_resize}"
+        )
 
         if preprocess_resize:
-            img = cv2.resize(img, (preprocess_resize, preprocess_resize)) if img.shape != (preprocess_resize, preprocess_resize) else img
+            img = (
+                cv2.resize(img, (preprocess_resize, preprocess_resize))
+                if img.shape != (preprocess_resize, preprocess_resize)
+                else img
+            )
         # cv2.imwrite(f"test/debug_output.png", img)
 
         # normalize
-        img = img.astype('float32') / 255.0
+        img = img.astype("float32") / 255.0
 
         return img
 
     @staticmethod
-    def _load_image(img_path: str, preprocess_resize: int = None, out_resize: int = None) -> torch.Tensor:
+    def _load_image(
+        img_path: str, preprocess_resize: int | None = None, out_resize: int | None = None
+    ) -> torch.Tensor:
         """
         Load an image from the given path, resize it to 224x224, normalize it, and split it into patches.
 
@@ -147,13 +156,15 @@ class ChessMoveFromDiffDataset(Dataset):
             img_path (str): Path to the image file.
             preprocess_resize (int, optional): Resize the image to this size. Defaults to None.
             out_resize (int, optional): Resize the patches to this size. Defaults to None.
-        
+
         Returns:
             torch.Tensor: Tensor of shape (64, 1, 32, 32) containing the patches.
         """
         assert os.path.exists(img_path), f"Image {img_path} not found."
-        assert preprocess_resize is None or preprocess_resize > 0, f"Expected resize size greater than 0, got {preprocess_resize}"
-        
+        assert preprocess_resize is None or preprocess_resize > 0, (
+            f"Expected resize size greater than 0, got {preprocess_resize}"
+        )
+
         # Load the image
         img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
 
@@ -171,14 +182,16 @@ class ChessMoveFromDiffDataset(Dataset):
         img_path = os.path.join(self.diff_images_dir, f"{id}.png")
         move_uci = row["move_uci"]
 
-        diff_tensor = ChessMoveFromDiffDataset._load_image(img_path, preprocess_resize=224, out_resize=32)
+        diff_tensor = ChessMoveFromDiffDataset._load_image(
+            img_path, preprocess_resize=224, out_resize=32
+        )
 
         from_sq, to_sq, promo = from_uci(move_uci)
 
         label = {
             "from": torch.tensor(from_sq, dtype=torch.long),
             "to": torch.tensor(to_sq, dtype=torch.long),
-            "promotion": torch.tensor(promo, dtype=torch.long)
+            "promotion": torch.tensor(promo, dtype=torch.long),
         }
 
         return diff_tensor, label

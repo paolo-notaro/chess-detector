@@ -1,0 +1,13 @@
+{
+    "[python]": {
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit",
+            "source.fixAll.ruff": "explicit"
+        }
+    },
+    "ruff.importStrategy": "fromEnvironment",
+    "editor.rulers": [100],
+    "cSpell.words": ["Lichess", "uci", "fen", "ruff", "astral"]
+}

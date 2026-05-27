@@ -1,25 +1,32 @@
+"""Tkinter demo that streams board images from an IP camera and predicts moves.
+
+This script is invoked as the ``chess-detector-demo-phone`` console script. It
+expects the ``CAMERA_URL`` constant below to be set to the URL of an IP camera
+(for example, the one exposed by Android apps such as "IP Webcam").
+"""
+
+import os
 import tkinter as tk
 from tkinter import messagebox, simpledialog
-from PIL import Image, ImageTk
-import requests
+
+import chess
 import cv2
 import numpy as np
 import requests
-from PIL import Image, ImageTk
-import chess
 import torch
-from dataset.dataset import ChessMoveFromDiffDataset
-from diff_models import ChessMoveModel, ConvPatchEncoder
-from diff_predict import predict_move
-from dataset.postprocessing import calibrate_camera_from_images, rectify_board, gen_diff
-import os
+from PIL import Image, ImageTk
 
-CAMERA_URL = None  # Update IP as needed, e.g. "http://<camera_ip>/photo.jpg"
+from chess_detector.data.dataset import ChessMoveFromDiffDataset
+from chess_detector.data.postprocessing import (
+    calibrate_camera_from_images,
+    gen_diff,
+    rectify_board,
+)
+from chess_detector.inference.predict import predict_move
+from chess_detector.models.diff import ChessMoveModel, ConvPatchEncoder
 
-if CAMERA_URL is None:
-    raise ValueError("Camera URL is not set. Please set the CAMERA_URL variable.")
-
-CAPTURE_CALIB_IMGS = 5  # Number of images to capture for calibration
+CAMERA_URL = os.environ.get("CHESS_DETECTOR_CAMERA_URL")
+CAPTURE_CALIB_IMGS = 5
 
 chessboard_corners = None
 before_image = None
@@ -27,55 +34,45 @@ after_image = None
 board = None
 last_diff = None
 
-CHECKPOINT = "models/checkpoint_mercurial-stag-264_epoch11.pth"
+CHECKPOINT = os.environ.get(
+    "CHESS_DETECTOR_CHECKPOINT",
+    "models/checkpoint_mercurial-stag-264_epoch11.pth",
+)
 ENCODER_CLASS = ConvPatchEncoder
-PREPROCESSING_OUT_SIZE = 224  # Size of the preprocessed images
-PATCH_SIZE = PREPROCESSING_OUT_SIZE // 8  # As used in the dataset loading script
-FINAL_PATCH_SIZE = 32  # Final patch size for the model input
+PREPROCESSING_OUT_SIZE = 224
+PATCH_SIZE = PREPROCESSING_OUT_SIZE // 8
+FINAL_PATCH_SIZE = 32
 
-SAVE_DIFF = True  # Set to True to save the diff image for further training
-SAVE_DIFF_PATH = "dataset/diff_real/"  # Path to save the diff image
-SAVE_METADATA_PATH = "dataset/diff_real.csv"  # Path to save the metadata
+SAVE_DIFF = True
+SAVE_DIFF_PATH = "dataset/diff_real/"
+SAVE_METADATA_PATH = "dataset/diff_real.csv"
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = ChessMoveModel(embed_dim=256, encoder_class=ENCODER_CLASS)
-model.load_state_dict(torch.load(CHECKPOINT, map_location=device)["model_state_dict"])
-model.to(device)
-
-if not os.path.exists(SAVE_DIFF_PATH):
-    os.makedirs(SAVE_DIFF_PATH)
-
+device: torch.device | None = None
+model: ChessMoveModel | None = None
 NEXT_ID = 0
 
-if not os.path.exists(SAVE_METADATA_PATH):
-    with open(SAVE_METADATA_PATH, "w") as f:
-        f.write("id,move\n")
-else:
-    with open(SAVE_METADATA_PATH, "r") as f:
-        lines = f.readlines()
-        if len(lines) > 1:
-            NEXT_ID = int(lines[-1].split(",")[0]) + 1
-        else:
-            NEXT_ID = 0
 
+def get_prediction(diff_image, board_fen, turn="wb"):
 
-def get_prediction(diff_image, board_fen, turn='wb'):
-    
     # Resize and normalize the diff image
-    preprocessed_diff_image = ChessMoveFromDiffDataset.preprocess_image(diff_image, preprocess_resize=PREPROCESSING_OUT_SIZE)
+    preprocessed_diff_image = ChessMoveFromDiffDataset.preprocess_image(
+        diff_image, preprocess_resize=PREPROCESSING_OUT_SIZE
+    )
 
     # Split the image into patches
-    patch_tensor = ChessMoveFromDiffDataset.patch_image(preprocessed_diff_image, resize_size=FINAL_PATCH_SIZE)
-
+    patch_tensor = ChessMoveFromDiffDataset.patch_image(
+        preprocessed_diff_image, resize_size=FINAL_PATCH_SIZE
+    )
 
     moves = predict_move(model, patch_tensor, device, board_fen=board_fen, topk=5, turn=turn)
 
     # Print the top 5 predicted moves
     print("Top 5 predicted moves:")
     for i, (move, conf) in enumerate(moves):
-        print(f"{i+1}: {move} ({conf:.4f})")
+        print(f"{i + 1}: {move} ({conf:.4f})")
 
     return moves
+
 
 def get_image():
     response = requests.get(CAMERA_URL, timeout=5)
@@ -93,9 +90,7 @@ def capture_board_with_detection():
         capture_board_with_detection.original_img = img.copy()
 
         # Chessboard detection
-        corners = calibrate_camera_from_images(
-            [img]
-        )  # returns 4 corners as a numpy array
+        corners = calibrate_camera_from_images([img])  # returns 4 corners as a numpy array
 
         capture_board_with_detection.chessboard_corners = corners
 
@@ -117,6 +112,7 @@ def capture_board_with_detection():
     except Exception as e:
         messagebox.showerror("Detection Error", str(e))
 
+
 def save_last_move(last_diff):
     global NEXT_ID, board
     move = board.peek()
@@ -124,22 +120,23 @@ def save_last_move(last_diff):
     # save metadata
     with open(SAVE_METADATA_PATH, "a") as f:
         f.write(f"{NEXT_ID},{move.uci()}\n")
-    
+
     # save img
     img_path = os.path.join(SAVE_DIFF_PATH, f"{NEXT_ID}.png")
     cv2.imwrite(img_path, last_diff)
 
     NEXT_ID += 1
 
+
 def prompt_user_choice(predicted_moves):
-    """ Shows a dialog that prompts the user to select a move from the predicted moves, with a number corresponding to each move. """
-    move_strs = [f"{i+1}: {move}" for i, (move, _) in enumerate(predicted_moves)]
+    """Shows a dialog that prompts the user to select a move from the predicted moves, with a number corresponding to each move."""
+    move_strs = [f"{i + 1}: {move}" for i, (move, _) in enumerate(predicted_moves)]
     move_str = "\n".join(move_strs)
 
     selected_move = simpledialog.askstring(
         "Select Move",
         f"Select a move, leave empty for the first choice or type it in UCI form:\n{move_str}",
-        parent=root
+        parent=root,
     )
 
     if len(selected_move) == 0:
@@ -157,6 +154,7 @@ def prompt_user_choice(predicted_moves):
 
     return predicted_moves[selected_move - 1][0]  # Return the UCI string of the selected move
 
+
 def capture_move():
     global last_diff, before_image, after_image, board
 
@@ -173,13 +171,15 @@ def capture_move():
 
         diff_image = gen_diff(before_image, after_image)
 
-        predicted_moves = get_prediction(diff_image, board.board_fen(), turn='w' if board.turn == chess.WHITE else 'b')
+        predicted_moves = get_prediction(
+            diff_image, board.board_fen(), turn="w" if board.turn == chess.WHITE else "b"
+        )
 
         pred_uci = prompt_user_choice(predicted_moves)
 
         move = chess.Move.from_uci(pred_uci)
 
-        while not move in board.legal_moves:
+        while move not in board.legal_moves:
             move_str = simpledialog.askstring(
                 "Edit Move",
                 "The move is illegal. Enter the move in UCI format (e.g., e2e4):",
@@ -193,7 +193,7 @@ def capture_move():
         update_board_display()
         manual_edit_move_btn.config(state=tk.NORMAL)
         label.config(
-            text=f"Move captured. Press 'Edit Move' to modify or 'Capture' to capture again. {board.turn == chess.WHITE and 'White' or 'Black'} to move."
+            text=f"Move captured. Press 'Edit Move' to modify or 'Capture' to capture again. {(board.turn == chess.WHITE and 'White') or 'Black'} to move."
         )
         manual_edit_move_btn.config(state=tk.NORMAL)
         capture_btn.config(text="Capture", command=capture_move)
@@ -202,10 +202,8 @@ def capture_move():
         after_image = None  # Reset after_image
         last_diff = diff_image.copy()  # Save the last diff image for potential saving
 
-    except:
-        messagebox.showerror(
-            "Capture Error", "Could not capture the move. Please try again."
-        )
+    except Exception:
+        messagebox.showerror("Capture Error", "Could not capture the move. Please try again.")
         return
 
 
@@ -213,7 +211,12 @@ def edit_last_move(initial_text=""):
     global board
     prev_move = board.peek()  # Get the last move without removing it
     move = None
-    move_str = simpledialog.askstring("Edit Move", "Enter the move in UCI format (e.g., e2e4):", parent=root, initialvalue=initial_text)
+    move_str = simpledialog.askstring(
+        "Edit Move",
+        "Enter the move in UCI format (e.g., e2e4):",
+        parent=root,
+        initialvalue=initial_text,
+    )
     if move_str:
         try:
             board.pop()  # Remove the last move
@@ -267,6 +270,7 @@ def confirm_detected_board():
     capture_btn.config(state=tk.NORMAL)
     capture_btn.config(text="Capture", command=capture_first)
 
+
 def update_board_display():
     global board_fen_label, last_move_label
 
@@ -278,6 +282,7 @@ def update_board_display():
         last_move_label.config(text=f"Last move: {board.peek().uci()}")
     else:
         last_move_label.config(text="Last move: None")
+
 
 def show_image(img, color=cv2.COLOR_BGR2RGB):
     if img is None:
@@ -293,43 +298,80 @@ def show_image(img, color=cv2.COLOR_BGR2RGB):
     image_label.image = img_tk
 
 
-# ---- UI Setup ----
-root = tk.Tk()
-root.title("Chessboard Detection")
-root.geometry("1024x768")
-root.configure(bg="white")
+root: tk.Tk | None = None
+label = detect_btn = confirm_btn = capture_btn = None
+image_label = last_move_label = manual_edit_move_btn = board_fen_label = None
 
-label = tk.Label(
-    root, text="Step 1: capture the chessboard", font=("Arial", 16), bg="white"
-)
-label.pack(pady=10)
 
-detect_btn = tk.Button(
-    root, text="🔍 Detect Chessboard", command=capture_board_with_detection
-)
-detect_btn.pack()
+def main() -> None:
+    """Console-script entry point: start the Tkinter phone-camera demo."""
+    global device, model, NEXT_ID
+    global root, label, detect_btn, confirm_btn, capture_btn
+    global image_label, last_move_label, manual_edit_move_btn, board_fen_label
 
-confirm_btn = tk.Button(
-    root, text="✅ Confirm Detection", command=confirm_detected_board, state=tk.DISABLED
-)
-confirm_btn.pack(pady=10)
+    if not CAMERA_URL:
+        raise SystemExit(
+            "Camera URL is not set. Export CHESS_DETECTOR_CAMERA_URL=http://<ip>/photo.jpg"
+        )
 
-capture_btn = tk.Button(
-    root, text="📸 Capture", command=capture_board_with_detection, state=tk.DISABLED
-)
-capture_btn.pack(pady=10)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = ChessMoveModel(embed_dim=256, encoder_class=ENCODER_CLASS)
+    model.load_state_dict(torch.load(CHECKPOINT, map_location=device)["model_state_dict"])
+    model.to(device)
 
-image_label = tk.Label(root)
-image_label.pack(pady=10)
+    if not os.path.exists(SAVE_DIFF_PATH):
+        os.makedirs(SAVE_DIFF_PATH)
 
-last_move_label = tk.Label(root)
-last_move_label.pack(pady=10)
+    if not os.path.exists(SAVE_METADATA_PATH):
+        with open(SAVE_METADATA_PATH, "w") as f:
+            f.write("id,move\n")
+    else:
+        with open(SAVE_METADATA_PATH) as f:
+            lines = f.readlines()
+            NEXT_ID = int(lines[-1].split(",")[0]) + 1 if len(lines) > 1 else 0
 
-manual_edit_move_btn = tk.Button(root, text="Edit Move", command=edit_last_move)
-manual_edit_move_btn.pack(pady=10)
-manual_edit_move_btn.config(state=tk.DISABLED)
+    root = tk.Tk()
+    root.title("Chessboard Detection")
+    root.geometry("1024x768")
+    root.configure(bg="white")
 
-board_fen_label = tk.Label(root, text="", font=("Arial", 12), bg="white")
-board_fen_label.pack(pady=10)
+    label = tk.Label(root, text="Step 1: capture the chessboard", font=("Arial", 16), bg="white")
+    label.pack(pady=10)
 
-root.mainloop()
+    detect_btn = tk.Button(root, text="🔍 Detect Chessboard", command=capture_board_with_detection)
+    detect_btn.pack()
+
+    confirm_btn = tk.Button(
+        root,
+        text="✅ Confirm Detection",
+        command=confirm_detected_board,
+        state=tk.DISABLED,
+    )
+    confirm_btn.pack(pady=10)
+
+    capture_btn = tk.Button(
+        root,
+        text="📸 Capture",
+        command=capture_board_with_detection,
+        state=tk.DISABLED,
+    )
+    capture_btn.pack(pady=10)
+
+    image_label = tk.Label(root)
+    image_label.pack(pady=10)
+
+    last_move_label = tk.Label(root)
+    last_move_label.pack(pady=10)
+
+    manual_edit_move_btn = tk.Button(root, text="Edit Move", command=edit_last_move)
+    manual_edit_move_btn.pack(pady=10)
+    manual_edit_move_btn.config(state=tk.DISABLED)
+
+    board_fen_label = tk.Label(root, text="", font=("Arial", 12), bg="white")
+    board_fen_label.pack(pady=10)
+
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()

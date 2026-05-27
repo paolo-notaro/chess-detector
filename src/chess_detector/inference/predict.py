@@ -1,19 +1,23 @@
-# infer_move.py
+"""Predict a chess move from a pair of board images.
+
+This module is invoked as the ``chess-detector-predict`` console script.
+"""
+
 import argparse
 import os
 
 import cv2 as cv
 import torch
 
-from dataset import chess_utils  # for SQUARES and SQUARE_TO_IDX
-from dataset.chess_utils import is_path_fenlike, topk_valid_moves_from_logits
-from dataset.dataset import ChessMoveFromDiffDataset
-from dataset.postprocessing import (
+from chess_detector.data import chess_utils
+from chess_detector.data.chess_utils import is_path_fenlike, topk_valid_moves_from_logits
+from chess_detector.data.dataset import ChessMoveFromDiffDataset
+from chess_detector.data.postprocessing import (
     calibrate_camera_from_path_match,
     gen_diff,
     rectify_board,
 )
-from diff_models import ChessMoveModel, ConvPatchEncoder
+from chess_detector.models.diff import ChessMoveModel, ConvPatchEncoder
 
 PREPROCESSING_OUT_SIZE = 224  # Size of the preprocessed images
 PATCH_SIZE = PREPROCESSING_OUT_SIZE // 8  # As used in the dataset loading script
@@ -24,9 +28,9 @@ ENCODER_CLASS = ConvPatchEncoder  # Change this to ResnetPatchEncoder if needed
 
 def predict_move(
     model: torch.nn.Module,
-    patch_tensor: torch.tensor,
+    patch_tensor: torch.Tensor,
     device: torch.device,
-    board_fen: str = None,
+    board_fen: str | None = None,
     turn: str = "wb",
     topk: int = 1,
 ) -> list[tuple[str, float]]:
@@ -51,7 +55,6 @@ def predict_move(
     patch_tensor = patch_tensor.to(device)
 
     with torch.no_grad():
-
         # Get the logits from the model
         patch_tensor = patch_tensor.unsqueeze(0)  # Add batch dimension
         scores = model(patch_tensor)
@@ -70,14 +73,16 @@ def predict_move(
     return topk_moves
 
 
-def main(args: argparse.Namespace) -> None:
-    """
-    Main function to run the chess move prediction from image difference.
+def main(args: argparse.Namespace | None = None) -> None:
+    """Run chess move prediction from a pair of images.
 
     Args:
-        args (argparse.Namespace): Command line arguments.
-
+        args: Optional pre-parsed argparse namespace. When ``None`` (the default,
+            used by the console-script entry point), arguments are read from
+            ``sys.argv`` via :func:`parse_args`.
     """
+    if args is None:
+        args = parse_args()
     if not os.path.exists(args.checkpoint):
         print(f"Checkpoint {args.checkpoint} not found.")
         return
@@ -86,28 +91,21 @@ def main(args: argparse.Namespace) -> None:
         print("One or both input images not found.")
         return
 
-    if not (board_fen := is_path_fenlike(args.before)):
-        board_fen = None
+    fen_candidate = is_path_fenlike(args.before)
+    board_fen = fen_candidate if isinstance(fen_candidate, str) else None
 
     if args.preprocess:
         img_before = cv.imread(args.before)
         img_after = cv.imread(args.after)
 
         # Find chessboard corners using base board images
-        chessboard_corners = calibrate_camera_from_path_match(
-            "dataset/images/empty_board_*.png"
-        )
+        chessboard_corners = calibrate_camera_from_path_match("dataset/images/empty_board_*.png")
 
         # Warp the images to get a top-down view of the chessboard, will also convert to grayscale
-        img_before = rectify_board(
-            img_before, chessboard_corners, size=PREPROCESSING_OUT_SIZE
-        )
-        img_after = rectify_board(
-            img_after, chessboard_corners, size=PREPROCESSING_OUT_SIZE
-        )
+        img_before = rectify_board(img_before, chessboard_corners, size=PREPROCESSING_OUT_SIZE)
+        img_after = rectify_board(img_after, chessboard_corners, size=PREPROCESSING_OUT_SIZE)
 
     else:
-
         img_before = cv.imread(args.before, cv.IMREAD_GRAYSCALE)
         img_after = cv.imread(args.after, cv.IMREAD_GRAYSCALE)
 
@@ -125,20 +123,17 @@ def main(args: argparse.Namespace) -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = ChessMoveModel(embed_dim=256, encoder_class=ENCODER_CLASS)
-    model.load_state_dict(
-        torch.load(args.checkpoint, map_location=device)["model_state_dict"]
-    )
+    model.load_state_dict(torch.load(args.checkpoint, map_location=device)["model_state_dict"])
     model.to(device)
 
-    move, confidence = predict_move(
-        model, patch_tensor, device, board_fen=board_fen, topk=1
-    )[
+    move, confidence = predict_move(model, patch_tensor, device, board_fen=board_fen, topk=1)[
         0
     ]  # Get the top move
     print(f"Predicted move: {move} (confidence: {confidence:.4f})")
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
+    """Parse CLI arguments for :func:`main`."""
     parser = argparse.ArgumentParser(description="Chess Move Diff Prediction Test")
     parser.add_argument(
         "--before",
@@ -168,5 +163,4 @@ def parse_args():
 
 
 if __name__ == "__main__":
-    arguments = parse_args()
-    main(arguments)
+    main()
