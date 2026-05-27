@@ -1,6 +1,7 @@
 """Tests for models module."""
 
 import torch
+
 from chess_detector.models.diff import ChessMoveModel, ConvPatchEncoder
 from chess_detector.models.pair import ChessMovePredictor, SmallCNNEncoder
 

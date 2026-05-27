@@ -1,6 +1,7 @@
 """Tests for postprocessing module."""
 
 import numpy as np
+
 from chess_detector.data.postprocessing import gen_diff, reorder_points
 
 

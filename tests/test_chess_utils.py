@@ -1,6 +1,6 @@
 """Tests for chess_utils module."""
 
-from chess_detector.data.chess_utils import to_uci, from_uci, is_move_valid
+from chess_detector.data.chess_utils import from_uci, is_move_valid, to_uci
 
 
 def test_to_uci():

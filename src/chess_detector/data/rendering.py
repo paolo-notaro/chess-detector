@@ -10,6 +10,8 @@ from pathlib import Path
 import bpy
 from chess import SQUARES, Board, square_file, square_rank
 
+from chess_detector.data.chess_utils import get_board_id
+
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 BLENDER_EXECUTABLE = os.environ.get(
@@ -239,9 +241,6 @@ def render_board(board, path, board_id, piece_placement_variability=None, suppre
     arrange_pieces(board, piece_placement_variability)
     render_image(path, f"{board_id}.png", suppress_output=suppress_output)
     clear_scene()
-
-
-from chess_detector.data.chess_utils import get_board_id
 
 
 def process_board(board, path, piece_placement_variability=None, suppress_output=True):
