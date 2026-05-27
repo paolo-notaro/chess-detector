@@ -49,3 +49,6 @@ jobs:
 
       - name: ty type check
         run: poetry run ty check
+
+      - name: Run unit tests
+        run: poetry run pytest tests/

@@ -22,46 +22,57 @@ def models_dir() -> Path:
 
 
 def preprocessed_dir() -> Path:
+    """Get path to preprocessed images directory."""
     return data_dir() / "preprocessed"
 
 
 def diff_dir() -> Path:
+    """Get path to diff images directory."""
     return data_dir() / "diff"
 
 
 def diff_real_dir() -> Path:
+    """Get path to real diff images directory."""
     return data_dir() / "diff_real"
 
 
 def images_dir() -> Path:
+    """Get path to raw images directory."""
     return data_dir() / "images"
 
 
 def last_index_file() -> Path:
+    """Get path to last index tracking file."""
     return data_dir() / "last_index.txt"
 
 
 def entries_file() -> Path:
+    """Get path to entries CSV file."""
     return data_dir() / "entries.csv"
 
 
 def diff_entries_train_file() -> Path:
+    """Get path to diff training entries CSV file."""
     return data_dir() / "diff_entries_train.csv"
 
 
 def diff_entries_eval_file() -> Path:
+    """Get path to diff evaluation entries CSV file."""
     return data_dir() / "diff_entries_eval.csv"
 
 
 def entries_train_file() -> Path:
+    """Get path to pair training entries CSV file."""
     return data_dir() / "entries_train.csv"
 
 
 def entries_eval_file() -> Path:
+    """Get path to pair evaluation entries CSV file."""
     return data_dir() / "entries_eval.csv"
 
 
 def diff_real_metadata_file() -> Path:
+    """Get path to real diff metadata CSV file."""
     return data_dir() / "diff_real.csv"
 
 

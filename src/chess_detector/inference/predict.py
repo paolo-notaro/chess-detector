@@ -122,7 +122,9 @@ def main(args: argparse.Namespace | None = None) -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = ChessMoveModel(embed_dim=256, encoder_class=ENCODER_CLASS)
-    model.load_state_dict(torch.load(args.checkpoint, map_location=device)["model_state_dict"])
+    model.load_state_dict(
+        torch.load(args.checkpoint, map_location=device, weights_only=True)["model_state_dict"]
+    )
     model.to(device)
 
     move, confidence = predict_move(model, patch_tensor, device, board_fen=board_fen, topk=1)[

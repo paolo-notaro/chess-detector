@@ -250,7 +250,7 @@ class ChessMoveDatasetFromCSV(Dataset):
 
 ## Step 4: Training the Model
 
-We train the model using the generated dataset. As usual, we split the dataset into training and validation sets, and use the validation set to monitor the model's performance during training. The model is [trained](https://github.com/paolo-notaro/chess-detector/blob/main/train.py) using a standard cross-entropy loss function (one for each predicting head), and we use an Adam optimizer with a fixed learning rate (<code>1e-4</code>) and a batch size of 32.
+We train the model using the generated dataset. As usual, we split the dataset into training and validation sets, and use the validation set to monitor the model's performance during training. The model is [trained](https://github.com/paolo-notaro/chess-detector/blob/main/src/chess_detector/training/train_pair.py) using a standard cross-entropy loss function (one for each predicting head), and we use an Adam optimizer with a fixed learning rate (<code>1e-4</code>) and a batch size of 32.
 
 The training process involves feeding the model pairs of images (before and after the move) and their corresponding labels. The model learns to predict the move based on the visual changes between the two images.
 

@@ -1,3 +1,5 @@
+"""Diff-based move prediction models."""
+
 import torch
 import torch.nn as nn
 from torchvision.models import ResNet18_Weights, resnet18
@@ -11,6 +13,7 @@ class ResnetPatchEncoder(nn.Module):
     """
 
     def __init__(self, in_channels=1, embed_dim=128):
+        """Docstring for __init__."""
         super().__init__()
         # Load a pre-trained ResNet18 model
         self.resnet = resnet18(weights=ResNet18_Weights.DEFAULT)
@@ -52,6 +55,7 @@ class ConvPatchEncoder(nn.Module):
     """
 
     def __init__(self, in_channels=1, embed_dim=128):
+        """Docstring for __init__."""
         super().__init__()
         self.cnn = nn.Sequential(
             nn.Conv2d(in_channels, 32, kernel_size=3, padding=1),  # [B, 32, 32, 32]
@@ -102,6 +106,7 @@ class MoveScorer(nn.Module):
     """
 
     def __init__(self, embed_dim=128, proj_size=32):
+        """Docstring for __init__."""
         super().__init__()
         self.from_proj = nn.Linear(embed_dim, proj_size)
         self.to_proj = nn.Linear(embed_dim, proj_size)
@@ -144,6 +149,7 @@ class ChessMoveModel(nn.Module):
         embed_dim=128,
         encoder_class=ResnetPatchEncoder,
     ):
+        """Docstring for __init__."""
         super().__init__()
         self.encoder = encoder_class(in_channels=in_channels, embed_dim=embed_dim)
         self.scorer = MoveScorer(embed_dim=embed_dim)

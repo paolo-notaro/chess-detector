@@ -1,3 +1,5 @@
+"""Chess game analysis utilities."""
+
 import io
 import random
 
@@ -10,6 +12,7 @@ AnalyzedMoves = tuple[dict[str, set[MoveEntry]], int]
 
 def analyze_games(pgn_file="lichess_truncated.pgn") -> AnalyzedMoves:
     # generate dataset annotation dict
+    """Analyze PGN file and categorize moves."""
     dataset: dict[str, set[MoveEntry]] = {}
     dataset["p"] = set()  # promotions
     dataset["kc"] = set()  # kingside castles
@@ -58,6 +61,7 @@ def select(
     print_info: bool = False,
 ) -> set[MoveEntry]:
     # select the moves
+    """Select a balanced subset of moves."""
     selected = set()
 
     toadd = random.sample(

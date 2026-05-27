@@ -1,3 +1,5 @@
+"""Image-pair baseline move prediction models."""
+
 import torch
 import torch.nn as nn
 import torchvision.models as models
@@ -5,11 +7,15 @@ import torchvision.models as models
 
 # Count parameters for each encoder alone
 def count_params(model, trainable_only=True):
+    """Count trainable or total parameters in a model."""
     return sum(p.numel() for p in model.parameters() if p.requires_grad or not trainable_only)
 
 
 class HybridLargeChessboardEncoder(nn.Module):
+    """Hybrid CNN-Transformer encoder."""
+
     def __init__(self, output_dim=256, num_transformer_layers=1, num_heads=8, dropout=0.1):
+        """Docstring for __init__."""
         super().__init__()
 
         # Load pre-trained ResNet model
@@ -50,7 +56,9 @@ class HybridLargeChessboardEncoder(nn.Module):
         self.fc = nn.Linear(resnet.fc.in_features, output_dim)
 
     def forward(self, x):
+        """Forward pass."""
         # ResNet feature extraction
+        """Forward pass."""
         x = self.resnet_layers(x)
         x = torch.flatten(x, 1)  # Flatten to [batch_size, features]
 
@@ -78,6 +86,7 @@ class SmallCNNEncoder(nn.Module):
     """For ~6k samples: small model, ~400k total with move network."""
 
     def __init__(self, output_dim=256):
+        """Docstring for __init__."""
         super().__init__()
         self.encoder = nn.Sequential(
             nn.Conv2d(1, 16, kernel_size=5, stride=2, padding=2),  # -> [B, 16, 112, 112]
@@ -93,6 +102,7 @@ class SmallCNNEncoder(nn.Module):
         self.fc = nn.Linear(64, output_dim)
 
     def forward(self, x):
+        """Forward pass."""
         x = self.encoder(x)
         x = x.view(x.size(0), -1)
         return self.fc(x)
@@ -102,6 +112,7 @@ class MidCNNEncoder(nn.Module):
     """For ~40k samples: ResNet18 variant, ~2-3M total with move network."""
 
     def __init__(self, output_dim=256):
+        """Docstring for __init__."""
         super().__init__()
         base = models.resnet18(pretrained=True)
         self.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
@@ -120,6 +131,7 @@ class MidCNNEncoder(nn.Module):
         self.fc = nn.Linear(256, output_dim)
 
     def forward(self, x):
+        """Forward pass."""
         x = self.backbone(x)
         x = x.view(x.size(0), -1)
         return self.fc(x)
@@ -129,6 +141,7 @@ class LargeCNNEncoder(nn.Module):
     """For ~100k samples: ResNet34 backbone, ~4-5M total with move network."""
 
     def __init__(self, output_dim=256):
+        """Docstring for __init__."""
         super().__init__()
         base = models.resnet34(pretrained=True)
         self.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
@@ -148,13 +161,17 @@ class LargeCNNEncoder(nn.Module):
         self.fc = nn.Linear(512, output_dim)
 
     def forward(self, x):
+        """Forward pass."""
         x = self.backbone(x)
         x = x.view(x.size(0), -1)
         return self.fc(x)
 
 
 class SimpleCNNEncoder(nn.Module):
+    """Simple CNN encoder."""
+
     def __init__(self, output_dim: int = 256):
+        """Docstring for __init__."""
         super().__init__()
         # Assuming input is of size [B, 1, 224, 224] (grayscale image)
         self.encoder = nn.Sequential(
@@ -171,6 +188,7 @@ class SimpleCNNEncoder(nn.Module):
         self.fc = nn.Linear(128, output_dim)
 
     def forward(self, x):
+        """Forward pass."""
         x = self.encoder(x)  # [B, 128, 1, 1]
         x = x.view(x.size(0), -1)  # Flatten: [B, 128]
         x = self.fc(x)  # [B, output_dim]
@@ -178,6 +196,8 @@ class SimpleCNNEncoder(nn.Module):
 
 
 class ChessMovePredictor(nn.Module):
+    """Image-pair move predictor model."""
+
     def __init__(self, embedding_dim=256, encoder_class: type[nn.Module] = SmallCNNEncoder):
         """
         Args:
@@ -209,6 +229,7 @@ class ChessMovePredictor(nn.Module):
         self.promotion_head = nn.Linear(256, 5)
 
     def forward(self, before, after):
+        """Forward pass."""
         emb_before = self.encoder(before)  # [B, D]
         emb_after = self.encoder(after)  # [B, D]
         combined = torch.cat([emb_before, emb_after], dim=1)  # [B, 2D]

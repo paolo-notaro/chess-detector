@@ -46,6 +46,7 @@ bpy = { version = "4.3.0", optional = true, python = ">=3.11,<3.12" }
 dataset = ["bpy"]
 
 [tool.poetry.group.dev.dependencies]
+pytest = ">=8.0.0"
 ruff = ">=0.7"
 ty = ">=0.0.1a5"
 
@@ -96,5 +97,5 @@ indent-style = "space"
 python-version = "3.11"
 
 [tool.ty.src]
-include = ["src"]
+include = ["src", "demos", "scripts"]
 exclude = ["src/chess_detector/data/rendering.py"]

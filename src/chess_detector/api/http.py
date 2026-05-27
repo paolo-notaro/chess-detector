@@ -27,6 +27,8 @@ ModelPredictor = Callable[
 
 @dataclass(frozen=True)
 class AvailableModel:
+    """Available model configuration."""
+
     description: str
     create_model: Callable[[], ChessMoveModel]
     predict: ModelPredictor

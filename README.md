@@ -136,7 +136,8 @@ The repository ships an opinionated quality gate built on
 [Astral](https://astral.sh)'s tooling.
 
 ```bash
-poetry install              # install dev dependencies (ruff, ty)
+poetry install              # install dev dependencies (ruff, ty, pytest)
+poetry run pytest tests/    # run unit tests
 poetry run ruff check .     # lint
 poetry run ruff format .    # format
 poetry run ty check         # static type check
@@ -150,6 +151,7 @@ The same three commands run on every push and pull request via
 - **Line length 100**, double-quoted strings, `ruff format` style.
 - **Type-annotate public functions.** `ty` is configured with default
   strictness; warnings are tolerated, errors block merging.
+- **Write unit tests.** Run them with `poetry run pytest tests/`.
 - **One concern per module.** Cross-package imports go through the public
   sub-package surface (`chess_detector.data`, `chess_detector.models`, …).
 - **No top-level side-effects** in modules used as console-script targets:

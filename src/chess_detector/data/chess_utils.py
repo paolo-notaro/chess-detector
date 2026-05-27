@@ -229,3 +229,9 @@ def is_path_fenlike(file_path: str) -> bool | str:
         return fen_string
     else:
         return False
+
+
+def get_board_id(board: chess.Board | str) -> str:
+    """Generate a valid filename ID from a Board or FEN string."""
+    board_fen = board.board_fen() if isinstance(board, chess.Board) else board
+    return board_fen.strip().replace("/", "_")

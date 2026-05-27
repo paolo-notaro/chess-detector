@@ -28,6 +28,7 @@ criterion = torch.nn.CrossEntropyLoss()
 
 
 def train(model, dataloader, optimizer, device):
+    """Train the model for one epoch."""
     model.train()
     total_loss = 0
     correct_from = correct_to = correct_promo = 0
@@ -72,6 +73,7 @@ def train(model, dataloader, optimizer, device):
 
 
 def evaluate(model, dataloader, device):
+    """Evaluate the model for one epoch."""
     model.eval()
     total_loss = 0
     correct_from = correct_to = correct_promo = 0
@@ -112,6 +114,7 @@ def evaluate(model, dataloader, device):
 
 
 def save_checkpoint(model, optimizer, epoch, best_val_loss: float, path="models/checkpoint.pth"):
+    """Save model checkpoint to disk."""
     torch.save(
         {
             "epoch": epoch,
@@ -125,6 +128,7 @@ def save_checkpoint(model, optimizer, epoch, best_val_loss: float, path="models/
 
 
 def load_checkpoint(model, optimizer, path="checkpoint.pth", device="cpu"):
+    """Load model checkpoint from disk."""
     checkpoint = torch.load(path, map_location=device)
     model.load_state_dict(checkpoint["model_state_dict"])
     optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
@@ -135,6 +139,7 @@ def load_checkpoint(model, optimizer, path="checkpoint.pth", device="cpu"):
 
 
 def _prepare_splits() -> None:
+    """Docstring for _prepare_splits."""
     train_csv = paths.entries_train_file()
     eval_csv = paths.entries_eval_file()
     if train_csv.exists() and eval_csv.exists():
@@ -164,6 +169,7 @@ def _prepare_splits() -> None:
 
 
 def _run_training() -> None:
+    """Docstring for _run_training."""
     models_dir = paths.models_dir()
     models_dir.mkdir(parents=True, exist_ok=True)
     mlflow.set_experiment("ChessMovePrediction")

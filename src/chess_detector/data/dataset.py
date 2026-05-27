@@ -1,3 +1,5 @@
+"""PyTorch datasets for chess move prediction."""
+
 import os
 
 import cv2
@@ -10,6 +12,8 @@ from chess_detector.data.chess_utils import PROMOTION_TO_IDX, SQUARE_TO_IDX, fro
 
 
 class ChessMoveDatasetFromCSV(Dataset):
+    """Dataset loading before/after image pairs."""
+
     def __init__(self, csv_path, image_dir):
         """
         csv_path: path to CSV with columns: before_fen, move_uci, after_fen
@@ -19,9 +23,11 @@ class ChessMoveDatasetFromCSV(Dataset):
         self.image_dir = image_dir
 
     def __len__(self):
+        """Docstring for __len__."""
         return len(self.df)
 
     def _load_image(self, image_id):
+        """Docstring for _load_image."""
         path = os.path.join(self.image_dir, f"{image_id}.png")
         img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
         img = cv2.resize(img, (224, 224)) if img.shape != (224, 224) else img
@@ -29,6 +35,7 @@ class ChessMoveDatasetFromCSV(Dataset):
         return torch.from_numpy(img).unsqueeze(0)  # shape: (1, 224, 224)
 
     def __getitem__(self, index):
+        """Docstring for __getitem__."""
         from chess_detector.data.rendering import get_board_id
 
         row = self.df.iloc[index]
@@ -70,6 +77,7 @@ class ChessMoveFromDiffDataset(Dataset):
         self.diff_images_dir = diff_images_dir
 
     def __len__(self):
+        """Docstring for __len__."""
         return len(self.df)
 
     @staticmethod
@@ -177,6 +185,7 @@ class ChessMoveFromDiffDataset(Dataset):
         return patches_tensor
 
     def __getitem__(self, index):
+        """Docstring for __getitem__."""
         row = self.df.iloc[index]
         id = row["id"]
         img_path = os.path.join(self.diff_images_dir, f"{id}.png")

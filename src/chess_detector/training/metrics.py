@@ -1,9 +1,12 @@
+"""Training metrics utilities."""
+
 from collections import defaultdict
 
 import torch
 
 
 def compute_metrics(scores_flat, gt_idx, inverse_idx, loss_value: float) -> dict[str, float]:
+    """Compute metrics for a single batch."""
     B = scores_flat.size(0)
 
     with torch.no_grad():
@@ -23,6 +26,7 @@ def compute_metrics(scores_flat, gt_idx, inverse_idx, loss_value: float) -> dict
 
 
 def aggregate_metrics(metrics_list: list[dict[str, float]]) -> dict[str, float]:
+    """Aggregate metrics across batches."""
     agg = defaultdict(float)
     total_count = 0
 

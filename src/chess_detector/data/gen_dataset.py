@@ -13,7 +13,7 @@ import random
 
 from chess import Board
 
-from chess_detector.data import analysis, download, paths, postprocessing
+from chess_detector.data import analysis, download, paths, postprocessing, rendering
 
 _DATA_DIR = paths.data_dir()
 
@@ -88,8 +88,6 @@ def get_moves() -> list[list[str]]:
 
 def main() -> None:
     """Console-script entry point for dataset generation."""
-    from chess_detector.data import rendering
-
     _DATA_DIR.mkdir(parents=True, exist_ok=True)
     RENDER_PATH.mkdir(parents=True, exist_ok=True)
     PREPROCESS_PATH.mkdir(parents=True, exist_ok=True)
@@ -121,6 +119,7 @@ def main() -> None:
         except ValueError:
             with ERRORS_FILE.open("a") as f:
                 f.write(f"Error parsing FENs: {before_fen}, {after_fen}\n")
+            i += 1
             continue
 
         try:

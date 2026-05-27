@@ -1,3 +1,5 @@
+"""Lichess dataset download utilities."""
+
 import os
 
 import requests

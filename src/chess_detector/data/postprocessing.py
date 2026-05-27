@@ -1,3 +1,5 @@
+"""Image processing and camera calibration utilities."""
+
 import glob
 
 import cv2 as cv
@@ -21,6 +23,7 @@ def calibrate_camera_from_path_match(path_match):
 
 def calibrate_camera_from_images(img_list: list):
     # termination criteria
+    """Calibrate camera from a list of empty board images."""
     criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
     # prepare object points, like (0,0,0), (1,0,0), (2,0,0) ....,(6,5,0)
@@ -146,6 +149,7 @@ def gen_diff(before_img, after_img, binary=False, binary_threshold=30):
 
 
 def process_image(frompath, chessboard_corners):
+    """Load and rectify an image."""
     img = cv.imread(frompath)
 
     img = rectify_board(img, chessboard_corners)
@@ -154,5 +158,6 @@ def process_image(frompath, chessboard_corners):
 
 
 def save_image(img, topath):
+    """Save an image to disk."""
     cv.imwrite(topath, img)
     print(f"Image {topath} saved.")

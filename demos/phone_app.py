@@ -54,7 +54,7 @@ NEXT_ID = 0
 
 
 def get_prediction(diff_image, board_fen, turn="wb"):
-
+    """Get model predictions from diff image."""
     # Resize and normalize the diff image
     preprocessed_diff_image = ChessMoveFromDiffDataset.preprocess_image(
         diff_image, preprocess_resize=PREPROCESSING_OUT_SIZE
@@ -76,6 +76,7 @@ def get_prediction(diff_image, board_fen, turn="wb"):
 
 
 def get_image():
+    """Fetch image from camera URL."""
     response = requests.get(CAMERA_URL, timeout=5)
     img_array = np.array(bytearray(response.content), dtype=np.uint8)
     img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
@@ -83,6 +84,7 @@ def get_image():
 
 
 def capture_board_with_detection():
+    """Detect and save chessboard corners from camera."""
     try:
         img = get_image()
         if img is None:
@@ -115,6 +117,7 @@ def capture_board_with_detection():
 
 
 def save_last_move(last_diff):
+    """Save the last move diff and metadata."""
     global NEXT_ID, board
     move = board.peek()
 
@@ -159,6 +162,7 @@ def prompt_user_choice(predicted_moves):
 
 
 def capture_move():
+    """Capture image after a move, predict, and update board."""
     global last_diff, before_image, after_image, board
 
     if SAVE_DIFF and last_diff is not None:
@@ -211,6 +215,7 @@ def capture_move():
 
 
 def edit_last_move(initial_text=""):
+    """Manually edit the last predicted move."""
     global board
     prev_move = board.peek()  # Get the last move without removing it
     move = None
@@ -236,6 +241,7 @@ def edit_last_move(initial_text=""):
 
 
 def capture_first():
+    """Capture the initial state of the board."""
     global before_image, after_image, board
     try:
         img = get_image()
@@ -258,6 +264,7 @@ def capture_first():
 
 
 def confirm_detected_board():
+    """Confirm the detected corners and proceed."""
     global chessboard_corners
 
     if capture_board_with_detection.chessboard_corners is None:
@@ -275,6 +282,7 @@ def confirm_detected_board():
 
 
 def update_board_display():
+    """Update UI with current board state."""
     global board_fen_label, last_move_label
 
     board_fen = board.board_fen()
@@ -288,6 +296,7 @@ def update_board_display():
 
 
 def show_image(img, color=cv2.COLOR_BGR2RGB):
+    """Display an image in the Tkinter UI."""
     if img is None:
         image_label.configure(image="")
         return

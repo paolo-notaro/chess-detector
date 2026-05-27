@@ -1,3 +1,5 @@
+"""Blender rendering utilities for synthetic dataset generation."""
+
 import math
 import os
 import random
@@ -81,6 +83,7 @@ def stdout_redirected(to=os.devnull):
     ####assert libc.fileno(ctypes.c_void_p.in_dll(libc, "stdout")) == fd == 1
 
     def _redirect_stdout(to):
+        """Docstring for _redirect_stdout."""
         sys.stdout.close()  # + implicit flush()
         os.dup2(to.fileno(), fd)  # fd writes to 'to' file
         sys.stdout = os.fdopen(fd, "w")  # Python writes to fd
@@ -98,6 +101,7 @@ def stdout_redirected(to=os.devnull):
 
 def setup_blender():
     # Load the scene
+    """Configure Blender rendering engine."""
     bpy.app.binary_path = BLENDER_EXECUTABLE
     bpy.ops.wm.open_mainfile(filepath=BLENDER_SCENE)
     bpy.data.scenes[0].render.engine = "CYCLES"
@@ -213,6 +217,7 @@ def arrange_pieces(board: Board, piece_placement_variability=None):
 
 
 def render_image(path, image_name, suppress_output=True):
+    """Render current scene to image."""
     if suppress_output:
         with stdout_redirected():
             bpy.context.scene.render.filepath = os.path.join(path, image_name)
@@ -224,22 +229,23 @@ def render_image(path, image_name, suppress_output=True):
 
 def clear_scene():
     # delete all objects in the "Temp" collection
+    """Clear temporary objects from scene."""
     for obj in bpy.data.collections["Temp"].objects:
         bpy.data.objects.remove(obj)
 
 
 def render_board(board, path, board_id, piece_placement_variability=None, suppress_output=True):
+    """Arrange pieces and render board."""
     arrange_pieces(board, piece_placement_variability)
     render_image(path, f"{board_id}.png", suppress_output=suppress_output)
     clear_scene()
 
 
-def get_board_id(board: Board | str):
-    board_fen = board.board_fen() if isinstance(board, Board) else board
-    return board_fen.strip().replace("/", "_")
+from chess_detector.data.chess_utils import get_board_id
 
 
 def process_board(board, path, piece_placement_variability=None, suppress_output=True):
+    """Process a board state and render if needed."""
     board_id = get_board_id(board)
 
     filepath = os.path.join(path, f"{board_id}.png")
@@ -256,6 +262,7 @@ def process_board(board, path, piece_placement_variability=None, suppress_output
 
 
 def generate_base_boards(path):
+    """Generate empty base boards for all materials."""
     clear_scene()
     # For each material whose empty board isn't generated yet, generate it
     for material in CHESS_SET_MATERIALS:
