@@ -9,23 +9,21 @@ working directory; override the location via the environment variable
 from __future__ import annotations
 
 import csv
-import os
 import random
-from pathlib import Path
 
 from chess import Board
 
-from chess_detector.data import analysis, download, postprocessing
+from chess_detector.data import analysis, download, paths, postprocessing
 
-_DATA_DIR = Path(os.environ.get("CHESS_DETECTOR_DATA_DIR", "dataset")).resolve()
+_DATA_DIR = paths.data_dir()
 
 GAMES = _DATA_DIR / "lichess_processed.pgn"
-MOVES = _DATA_DIR / "entries.csv"
+MOVES = paths.entries_file()
 
-RENDER_PATH = _DATA_DIR / "images"
-PREPROCESS_PATH = _DATA_DIR / "preprocessed"
-DIFF_PATH = _DATA_DIR / "diff"
-LAST_PROCESSED_INDEX_FILE = _DATA_DIR / "last_index.txt"
+RENDER_PATH = paths.images_dir()
+PREPROCESS_PATH = paths.preprocessed_dir()
+DIFF_PATH = paths.diff_dir()
+LAST_PROCESSED_INDEX_FILE = paths.last_index_file()
 
 METADATA_FILE = _DATA_DIR / "metadata.json"
 ERRORS_FILE = _DATA_DIR / "errors.txt"

@@ -1,23 +1,16 @@
-from typing import Type
-
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torchvision.models as models
 
 
 # Count parameters for each encoder alone
 def count_params(model, trainable_only=True):
-    return sum(
-        p.numel() for p in model.parameters() if p.requires_grad or not trainable_only
-    )
+    return sum(p.numel() for p in model.parameters() if p.requires_grad or not trainable_only)
 
 
 class HybridLargeChessboardEncoder(nn.Module):
-    def __init__(
-        self, output_dim=256, num_transformer_layers=1, num_heads=8, dropout=0.1
-    ):
-        super(HybridLargeChessboardEncoder, self).__init__()
+    def __init__(self, output_dim=256, num_transformer_layers=1, num_heads=8, dropout=0.1):
+        super().__init__()
 
         # Load pre-trained ResNet model
         resnet = models.resnet18(pretrained=True)
@@ -87,9 +80,7 @@ class SmallCNNEncoder(nn.Module):
     def __init__(self, output_dim=256):
         super().__init__()
         self.encoder = nn.Sequential(
-            nn.Conv2d(
-                1, 16, kernel_size=5, stride=2, padding=2
-            ),  # -> [B, 16, 112, 112]
+            nn.Conv2d(1, 16, kernel_size=5, stride=2, padding=2),  # -> [B, 16, 112, 112]
             nn.ReLU(),
             nn.MaxPool2d(2),  # -> [B, 16, 56, 56]
             nn.Conv2d(16, 32, kernel_size=3, padding=1),  # -> [B, 32, 56, 56]
@@ -187,9 +178,7 @@ class SimpleCNNEncoder(nn.Module):
 
 
 class ChessMovePredictor(nn.Module):
-    def __init__(
-        self, embedding_dim=256, encoder_class: Type[nn.Module] = SmallCNNEncoder
-    ):
+    def __init__(self, embedding_dim=256, encoder_class: type[nn.Module] = SmallCNNEncoder):
         """
         Args:
             embedding_dim (int): Dimension of the embedding.
@@ -231,4 +220,3 @@ class ChessMovePredictor(nn.Module):
         promotion_logits = self.promotion_head(x)  # [B, 5]
 
         return from_logits, to_logits, promotion_logits
-

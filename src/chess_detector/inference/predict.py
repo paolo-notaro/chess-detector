@@ -9,7 +9,7 @@ import os
 import cv2 as cv
 import torch
 
-from chess_detector.data import chess_utils
+from chess_detector.data import chess_utils, paths
 from chess_detector.data.chess_utils import is_path_fenlike, topk_valid_moves_from_logits
 from chess_detector.data.dataset import ChessMoveFromDiffDataset
 from chess_detector.data.postprocessing import (
@@ -98,8 +98,7 @@ def main(args: argparse.Namespace | None = None) -> None:
         img_before = cv.imread(args.before)
         img_after = cv.imread(args.after)
 
-        # Find chessboard corners using base board images
-        chessboard_corners = calibrate_camera_from_path_match("dataset/images/empty_board_*.png")
+        chessboard_corners = calibrate_camera_from_path_match(paths.empty_boards_glob())
 
         # Warp the images to get a top-down view of the chessboard, will also convert to grayscale
         img_before = rectify_board(img_before, chessboard_corners, size=PREPROCESSING_OUT_SIZE)
@@ -135,18 +134,14 @@ def main(args: argparse.Namespace | None = None) -> None:
 def parse_args() -> argparse.Namespace:
     """Parse CLI arguments for :func:`main`."""
     parser = argparse.ArgumentParser(description="Chess Move Diff Prediction Test")
-    parser.add_argument(
-        "--before",
-        type=str,
-        default="dataset/preprocessed/r4rk1_pp1qbpp1_3p1n1p_2pNp3_4P3_1P1P2PB_PBP2P1P_R2Q1RK1.png",
-        help="Path to before-move image",
+    default_before = (
+        paths.preprocessed_dir() / "r4rk1_pp1qbpp1_3p1n1p_2pNp3_4P3_1P1P2PB_PBP2P1P_R2Q1RK1.png"
     )
-    parser.add_argument(
-        "--after",
-        type=str,
-        default="dataset/preprocessed/r4rk1_pp2bpp1_3p1n1p_2pNp3_4P3_1P1P2Pq_PBP2P1P_R2Q1RK1.png",
-        help="Path to after-move image",
+    default_after = (
+        paths.preprocessed_dir() / "r4rk1_pp2bpp1_3p1n1p_2pNp3_4P3_1P1P2Pq_PBP2P1P_R2Q1RK1.png"
     )
+    parser.add_argument("--before", type=str, default=str(default_before))
+    parser.add_argument("--after", type=str, default=str(default_after))
     parser.add_argument(
         "--preprocess",
         action="store_true",
@@ -156,7 +151,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--checkpoint",
         type=str,
-        default="models/best.pth",
+        default=str(paths.models_dir() / "best.pth"),
         help="Path to model checkpoint",
     )
     return parser.parse_args()

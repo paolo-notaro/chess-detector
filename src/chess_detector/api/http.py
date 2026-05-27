@@ -4,6 +4,7 @@ This module is invoked as the ``chess-detector-api`` console script.
 """
 
 import base64
+import os
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -206,8 +207,17 @@ def predict():
 
 
 def main() -> None:
-    """Console-script entry point: start the Flask development server."""
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    """Console-script entry point: start the Flask server.
+
+    Listens on ``127.0.0.1:5000`` by default. Override host/port via
+    ``CHESS_DETECTOR_API_HOST`` / ``CHESS_DETECTOR_API_PORT``. Debug mode
+    is opt-in via ``CHESS_DETECTOR_API_DEBUG=1`` and should *never* be set
+    on an externally reachable host.
+    """
+    host = os.environ.get("CHESS_DETECTOR_API_HOST", "127.0.0.1")
+    port = int(os.environ.get("CHESS_DETECTOR_API_PORT", "5000"))
+    debug = os.environ.get("CHESS_DETECTOR_API_DEBUG") == "1"
+    app.run(host=host, port=port, debug=debug)
 
 
 if __name__ == "__main__":

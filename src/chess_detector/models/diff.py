@@ -125,9 +125,7 @@ class MoveScorer(nn.Module):
 
         # Compute pairwise move scores using batched matrix multiplication and
         # normalize by learned temperature
-        scores = (
-            torch.matmul(from_vecs, to_vecs.transpose(1, 2)) * self.temperature
-        )  # [B, 64, 64]
+        scores = torch.matmul(from_vecs, to_vecs.transpose(1, 2)) * self.temperature  # [B, 64, 64]
         return scores
 
 
@@ -166,8 +164,6 @@ class ChessMoveModel(nn.Module):
         """
         # patches: [B, 64, C, H, W]
         embeddings = self.encoder(patches)  # [B, 64, embed_dim]
-        embeddings = embeddings + self.positional_encoding.unsqueeze(
-            0
-        )  # [B, 64, embed_dim]
+        embeddings = embeddings + self.positional_encoding.unsqueeze(0)  # [B, 64, embed_dim]
         scores = self.scorer(embeddings)  # [B, 64, 64]
         return scores

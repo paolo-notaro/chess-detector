@@ -1,136 +1,111 @@
 """Standalone OpenCV chessboard calibration demo (kept for reference).
 
-Run from the repo root with the dataset already generated under ``dataset/``.
+Run from the repo root with the dataset already generated under
+``$CHESS_DETECTOR_DATA_DIR`` (default ``./dataset``). The script:
+
+1. Loads every ``empty_board_*.png`` and recovers the camera intrinsics.
+2. Picks one rendered scene, runs PnP, projects the board corners back into
+   the image, and warps it to a 512x512 top-down view.
+
+Aborts cleanly if no calibration images or scene image are present, instead
+of crashing with ``UnboundLocalError``/``NameError``.
 """
 
+from __future__ import annotations
+
 import glob
+import sys
 
 import cv2 as cv
 import numpy as np
 
-criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+from chess_detector.data import paths
 
-# prepare object points, like (0,0,0), (1,0,0), (2,0,0) ....,(6,5,0)
-objp = np.zeros((7 * 7, 3), np.float32)
-objp[:, :2] = np.mgrid[0:7, 0:7].T.reshape(-1, 2)
-
-# Arrays to store object points and image points from all the images.
-objpoints = []  # 3d point in real world space
-imgpoints = []  # 2d points in image plane.
-
-images = glob.glob("./dataset/images/empty_board_*.png")
-
-for fname in images:
-    img = cv.imread(fname)
-    gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
-
-    # Find the chess board corners
-    ret, corners = cv.findChessboardCorners(gray, (7, 7), None)
-
-    # If found, add object points, image points (after refining them)
-    if ret:
-        objpoints.append(objp)
-
-        corners2 = cv.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
-        imgpoints.append(corners2)
-
-        # Draw and display the corners
-        # cv.drawChessboardCorners(img, (7,7), corners2, ret)
-        # cv.imshow('img', img)
-        # cv.waitKey(5000)
-
-ret, mtx, dist, rvecs, tvecs = cv.calibrateCamera(
-    objpoints, imgpoints, gray.shape[::-1], None, None
-)
+CRITERIA = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+SCENE_IMAGE_NAME = "b04fa05490a37470481f5bfd6b36392c.png"
+OUTPUT_PATH = "8x8_chessboard_grid.png"
 
 
-def draw_box(img, imgpts, color, thickness=1):
-    imgpts = np.int32(imgpts).reshape(-1, 2)
-
-    # bottom
-    img = cv.line(img, tuple(imgpts[0]), tuple(imgpts[1]), color, thickness)
-    img = cv.line(img, tuple(imgpts[1]), tuple(imgpts[2]), color, thickness)
-    img = cv.line(img, tuple(imgpts[2]), tuple(imgpts[3]), color, thickness)
-    img = cv.line(img, tuple(imgpts[3]), tuple(imgpts[0]), color, thickness)
-
-    # top
-    img = cv.line(img, tuple(imgpts[4]), tuple(imgpts[5]), color, thickness)
-    img = cv.line(img, tuple(imgpts[5]), tuple(imgpts[6]), color, thickness)
-    img = cv.line(img, tuple(imgpts[6]), tuple(imgpts[7]), color, thickness)
-    img = cv.line(img, tuple(imgpts[7]), tuple(imgpts[4]), color, thickness)
-
-    # pillars
-    img = cv.line(img, tuple(imgpts[0]), tuple(imgpts[4]), color, thickness)
-    img = cv.line(img, tuple(imgpts[1]), tuple(imgpts[5]), color, thickness)
-    img = cv.line(img, tuple(imgpts[2]), tuple(imgpts[6]), color, thickness)
-    img = cv.line(img, tuple(imgpts[3]), tuple(imgpts[7]), color, thickness)
-
-    return img
+def _make_object_points() -> np.ndarray:
+    objp = np.zeros((7 * 7, 3), np.float32)
+    objp[:, :2] = np.mgrid[0:7, 0:7].T.reshape(-1, 2)
+    return objp
 
 
-def rectify_board(img, corners, size=224):
-    """
-    Warp perspective to get a top-down view of the chessboard.
-
-    Parameters:
-        img: Input BGR or grayscale image
-        corners: 4x2 array of image coordinates (top-left, top-right, bottom-right, bottom-left)
-        size: Target square image size (default 224)
-
-    Returns:
-        Warped grayscale 224x224 image (float32, normalized [0,1])
-    """
-    # Define target square corners
+def rectify_board(img: np.ndarray, corners: np.ndarray, size: int = 224) -> np.ndarray:
+    """Warp the perspective of ``img`` to a top-down ``size``x``size`` board."""
     dst_pts = np.array(
         [[0, 0], [size - 1, 0], [size - 1, size - 1], [0, size - 1]], dtype=np.float32
     )
-
     src_pts = np.array(corners, dtype=np.float32)
-
-    # Compute homography
     matrix = cv.getPerspectiveTransform(src_pts, dst_pts)
     warped = cv.warpPerspective(img, matrix, (size, size))
-
-    # Convert to grayscale if needed
     if len(warped.shape) == 3:
         warped = cv.cvtColor(warped, cv.COLOR_BGR2GRAY)
-
-    # Normalize to [0, 1]
-    warped = warped.astype(np.float32) / 255.0
-
-    return warped
+    return warped.astype(np.float32) / 255.0
 
 
-img = cv.imread("./dataset/images/b04fa05490a37470481f5bfd6b36392c.png")
-h, w = img.shape[:2]
+def _calibrate_from_empty_boards(objp: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    objpoints: list[np.ndarray] = []
+    imgpoints: list[np.ndarray] = []
+    last_gray: np.ndarray | None = None
 
-gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+    for fname in glob.glob(paths.empty_boards_glob()):
+        img = cv.imread(fname)
+        if img is None:
+            continue
+        gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+        ret, corners = cv.findChessboardCorners(gray, (7, 7), None)
+        if not ret:
+            continue
+        objpoints.append(objp)
+        corners2 = cv.cornerSubPix(gray, corners, (11, 11), (-1, -1), CRITERIA)
+        imgpoints.append(corners2)
+        last_gray = gray
 
-ret, corners = cv.findChessboardCorners(gray, (7, 7), None)
+    if not objpoints or last_gray is None:
+        raise FileNotFoundError(
+            f"No usable calibration images at {paths.empty_boards_glob()!r}; "
+            "run chess-detector-gen-dataset first."
+        )
 
-# If found, add object points, image points (after refining them)
-if ret:
-    objpoints.append(objp)
+    _, mtx, dist, _, _ = cv.calibrateCamera(objpoints, imgpoints, last_gray.shape[::-1], None, None)
+    return objp, mtx, dist
 
-    corners2 = cv.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
-    imgpoints.append(corners2)
 
-ret, rvecs, tvecs = cv.solvePnP(objp, corners2, mtx, dist)
+def main() -> int:
+    """Console entry point: calibrate, rectify a sample scene, and save the result."""
+    objp = _make_object_points()
+    try:
+        objp, mtx, dist = _calibrate_from_empty_boards(objp)
+    except FileNotFoundError as err:
+        print(err, file=sys.stderr)
+        return 1
 
-# chessboard corners
-corners = np.float32([[-1, -1, 0], [7, -1, 0], [7, 7, 0], [-1, 7, 0]])
+    scene_path = paths.images_dir() / SCENE_IMAGE_NAME
+    img = cv.imread(str(scene_path))
+    if img is None:
+        print(f"Scene image not found: {scene_path}", file=sys.stderr)
+        return 1
 
-# project 3D points to image plane
-imgpts, jac = cv.projectPoints(corners, rvecs, tvecs, mtx, dist)
+    gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+    ret, corners = cv.findChessboardCorners(gray, (7, 7), None)
+    if not ret:
+        print(f"Could not detect a chessboard in {scene_path}", file=sys.stderr)
+        return 1
+    corners2 = cv.cornerSubPix(gray, corners, (11, 11), (-1, -1), CRITERIA)
 
-imgpts = np.int32(imgpts).reshape(-1, 2)
+    _, rvecs, tvecs = cv.solvePnP(objp, corners2, mtx, dist)
+    board_corners = np.array([[-1, -1, 0], [7, -1, 0], [7, 7, 0], [-1, 7, 0]], dtype=np.float32)
+    imgpts, _ = cv.projectPoints(board_corners, rvecs, tvecs, mtx, dist)
+    imgpts = np.int32(imgpts).reshape(-1, 2)
 
-img = rectify_board(img, imgpts, size=512)
+    rectified = rectify_board(img, imgpts, size=512)
+    cv.imshow("8x8 Chessboard Grid", rectified)
+    cv.waitKey(5000)
+    cv.imwrite(OUTPUT_PATH, rectified)
+    return 0
 
-# Show the result
-cv.imshow("8x8 Chessboard Grid", img)
-cv.waitKey(5000)
 
-# Save the result
-
-cv.imwrite("./8x8_chessboard_grid.png", img)
+if __name__ == "__main__":
+    raise SystemExit(main())

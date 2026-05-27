@@ -16,6 +16,7 @@ import requests
 import torch
 from PIL import Image, ImageTk
 
+from chess_detector.data import paths
 from chess_detector.data.dataset import ChessMoveFromDiffDataset
 from chess_detector.data.postprocessing import (
     calibrate_camera_from_images,
@@ -36,7 +37,7 @@ last_diff = None
 
 CHECKPOINT = os.environ.get(
     "CHESS_DETECTOR_CHECKPOINT",
-    "models/checkpoint_mercurial-stag-264_epoch11.pth",
+    str(paths.models_dir() / "checkpoint_mercurial-stag-264_epoch11.pth"),
 )
 ENCODER_CLASS = ConvPatchEncoder
 PREPROCESSING_OUT_SIZE = 224
@@ -44,8 +45,8 @@ PATCH_SIZE = PREPROCESSING_OUT_SIZE // 8
 FINAL_PATCH_SIZE = 32
 
 SAVE_DIFF = True
-SAVE_DIFF_PATH = "dataset/diff_real/"
-SAVE_METADATA_PATH = "dataset/diff_real.csv"
+SAVE_DIFF_PATH = str(paths.diff_real_dir())
+SAVE_METADATA_PATH = str(paths.diff_real_metadata_file())
 
 device: torch.device | None = None
 model: ChessMoveModel | None = None
@@ -129,30 +130,32 @@ def save_last_move(last_diff):
 
 
 def prompt_user_choice(predicted_moves):
-    """Shows a dialog that prompts the user to select a move from the predicted moves, with a number corresponding to each move."""
+    """Prompt the user to pick a predicted move by index or type a UCI move.
+
+    Returns the chosen UCI string. If the user cancels the dialog or submits
+    an empty/whitespace-only response, the top-ranked predicted move is used.
+    """
     move_strs = [f"{i + 1}: {move}" for i, (move, _) in enumerate(predicted_moves)]
     move_str = "\n".join(move_strs)
 
-    selected_move = simpledialog.askstring(
+    raw = simpledialog.askstring(
         "Select Move",
         f"Select a move, leave empty for the first choice or type it in UCI form:\n{move_str}",
         parent=root,
     )
 
-    if len(selected_move) == 0:
-        selected_move = 1
-    else:
-        try:
-            intval = int(selected_move)
-            if intval < 1 or intval > len(predicted_moves):
-                raise ValueError("Invalid selection")
-            selected_move = intval
-        except ValueError:
-            # If the input is not an integer, use it as a UCI move string
-            selected_move = selected_move.strip()
-            return selected_move  # Return the UCI string directly
+    selected = (raw or "").strip()
+    if not selected:
+        return predicted_moves[0][0]
 
-    return predicted_moves[selected_move - 1][0]  # Return the UCI string of the selected move
+    try:
+        intval = int(selected)
+    except ValueError:
+        return selected
+
+    if intval < 1 or intval > len(predicted_moves):
+        return predicted_moves[0][0]
+    return predicted_moves[intval - 1][0]
 
 
 def capture_move():

@@ -4,14 +4,13 @@ This module is invoked as the ``chess-detector-train-pair`` console script.
 """
 
 import csv
-import os
 import random
 
 import mlflow
 import torch
 from tqdm import tqdm
 
-from chess_detector.data import dataset
+from chess_detector.data import dataset, paths
 from chess_detector.models.pair import (
     ChessMovePredictor,
     SmallCNNEncoder,
@@ -21,15 +20,9 @@ from chess_detector.models.pair import (
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 num_epochs = 100000
-checkpoint_to_load = None  # "models/checkpoint_hilarious-doe-40_epoch1.pth" or None
+checkpoint_to_load = None
 
 train_eval_ratio = 0.8
-
-if device.type == "cpu":
-    print("Warning: CUDA not available, using CPU...")
-else:
-    print(f"Using {device}")
-
 
 criterion = torch.nn.CrossEntropyLoss()
 
@@ -142,13 +135,14 @@ def load_checkpoint(model, optimizer, path="checkpoint.pth", device="cpu"):
 
 
 def _prepare_splits() -> None:
-    if os.path.exists("dataset/entries_train.csv") and os.path.exists("dataset/entries_eval.csv"):
+    train_csv = paths.entries_train_file()
+    eval_csv = paths.entries_eval_file()
+    if train_csv.exists() and eval_csv.exists():
         return
 
-    with open("dataset/last_index.txt") as f:
-        last_index = int(f.read())
+    last_index = int(paths.last_index_file().read_text())
 
-    with open("dataset/entries.csv") as f:
+    with paths.entries_file().open() as f:
         entries = list(csv.reader(f))[1 : last_index + 1]
 
     print(
@@ -158,19 +152,20 @@ def _prepare_splits() -> None:
     random.shuffle(entries)
     split_index = int(len(entries) * train_eval_ratio)
 
-    with open("dataset/entries_train.csv", "w", newline="") as f:
+    with train_csv.open("w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["before_fen", "move_uci", "after_fen"])
         writer.writerows(entries[:split_index])
 
-    with open("dataset/entries_eval.csv", "w", newline="") as f:
+    with eval_csv.open("w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["before_fen", "move_uci", "after_fen"])
         writer.writerows(entries[split_index:])
 
 
 def _run_training() -> None:
-    os.makedirs("models", exist_ok=True)
+    models_dir = paths.models_dir()
+    models_dir.mkdir(parents=True, exist_ok=True)
     mlflow.set_experiment("ChessMovePrediction")
 
     with mlflow.start_run() as run:
@@ -191,10 +186,10 @@ def _run_training() -> None:
         print(f"Trainable parameters: {count_params(model, trainable_only=True)}")
 
         train_dataset = dataset.ChessMoveDatasetFromCSV(
-            "dataset/entries_train.csv", "dataset/preprocessed"
+            str(paths.entries_train_file()), str(paths.preprocessed_dir())
         )
         val_dataset = dataset.ChessMoveDatasetFromCSV(
-            "dataset/entries_eval.csv", "dataset/preprocessed"
+            str(paths.entries_eval_file()), str(paths.preprocessed_dir())
         )
 
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True)
@@ -244,16 +239,21 @@ def _run_training() -> None:
 
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
-                ckpt_name = f"models/checkpoint_{run_name}_epoch{epoch + 1}.pth"
+                ckpt_path = models_dir / f"checkpoint_{run_name}_epoch{epoch + 1}.pth"
                 save_checkpoint(
-                    model, optimizer, epoch, path=ckpt_name, best_val_loss=best_val_loss
+                    model, optimizer, epoch, path=str(ckpt_path), best_val_loss=best_val_loss
                 )
-                mlflow.log_artifact(ckpt_name)
+                mlflow.log_artifact(str(ckpt_path))
 
 
 def main() -> None:
     """Console-script entry point: train the image-pair baseline model."""
-    if not os.path.exists("dataset/preprocessed") or not os.path.exists("dataset/last_index.txt"):
+    if device.type == "cpu":
+        print("Warning: CUDA not available, using CPU...")
+    else:
+        print(f"Using {device}")
+
+    if not paths.preprocessed_dir().exists() or not paths.last_index_file().exists():
         print("Preprocessed dataset not found, please run chess-detector-gen-dataset first")
         return
 

@@ -4,41 +4,33 @@ This module is invoked as the ``chess-detector-train-diff`` console script.
 """
 
 import csv
-import os
 import random
 
 import mlflow
 import torch
 from tqdm import tqdm
 
-from chess_detector.data import dataset
+from chess_detector.data import dataset, paths
 from chess_detector.models.diff import ChessMoveModel, ConvPatchEncoder
 from chess_detector.models.pair import count_params
 from chess_detector.training.metrics import aggregate_metrics, compute_metrics
 
-encoder_class = ConvPatchEncoder  # or ResnetPatchEncoder
+encoder_class = ConvPatchEncoder
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 num_epochs = 100000
-checkpoint_to_load = None  # "models/checkpoint_hilarious-doe-40_epoch1.pth" or None
+checkpoint_to_load = None
 
 LEARNING_RATE = 1e-4
 EMBED_DIM = 256
 TRAIN_BATCH_SIZE = 16
 EVAL_BATCH_SIZE = 128
 
-# To test if overfitting works
-LIMIT_DATASET = None  # None for no limit, otherwise set to the number of samples to use.
+LIMIT_DATASET = None
 
 SEED = 42
 
 train_eval_ratio = 0.8
-
-if device.type == "cpu":
-    print("Warning: CUDA not available, using CPU...")
-else:
-    print(f"Using {device}")
-
 
 criterion = torch.nn.CrossEntropyLoss(reduction="mean")
 
@@ -168,7 +160,12 @@ def load_checkpoint(model, optimizer, path="checkpoint.pth", device="cpu"):
 
 def main() -> None:
     """Console-script entry point: train the diff-based chess move model."""
-    if not os.path.exists("dataset/preprocessed") or not os.path.exists("dataset/last_index.txt"):
+    if device.type == "cpu":
+        print("Warning: CUDA not available, using CPU...")
+    else:
+        print(f"Using {device}")
+
+    if not paths.preprocessed_dir().exists() or not paths.last_index_file().exists():
         print("Preprocessed dataset not found, please run chess-detector-gen-dataset first")
         return
 
@@ -177,41 +174,43 @@ def main() -> None:
 
 
 def _prepare_splits() -> None:
-    if os.path.exists("dataset/diff_entries_train.csv") and os.path.exists(
-        "dataset/diff_entries_eval.csv"
-    ):
+    train_csv = paths.diff_entries_train_file()
+    eval_csv = paths.diff_entries_eval_file()
+    if train_csv.exists() and eval_csv.exists():
         return
 
-    with open("dataset/last_index.txt") as f:
-        last_index = int(f.read())
+    last_index = int(paths.last_index_file().read_text())
+    diff_dir = paths.diff_dir()
 
-    with open("dataset/entries.csv") as f:
+    with paths.entries_file().open() as f:
         entries = [
             (i, row[1])
             for i, row in enumerate(list(csv.reader(f))[1 : last_index + 1])
-            if os.path.exists(os.path.join("dataset/diff", str(i) + ".png"))
-        ]  # skip header
+            if (diff_dir / f"{i}.png").exists()
+        ]
     print(
-        f"Total of {len(entries)} moves found. Splitting dataset with a ratio of {train_eval_ratio}..."
+        f"Total of {len(entries)} moves found. "
+        f"Splitting dataset with a ratio of {train_eval_ratio}..."
     )
 
     random.shuffle(entries)
 
     split_index = int(len(entries) * train_eval_ratio)
 
-    with open("dataset/diff_entries_train.csv", "w", newline="") as f:
+    with train_csv.open("w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["id", "move_uci"])
         writer.writerows(entries[:split_index])
 
-    with open("dataset/diff_entries_eval.csv", "w", newline="") as f:
+    with eval_csv.open("w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["id", "move_uci"])
         writer.writerows(entries[split_index:])
 
 
 def _run_training() -> None:
-    os.makedirs("models", exist_ok=True)
+    models_dir = paths.models_dir()
+    models_dir.mkdir(parents=True, exist_ok=True)
     mlflow.set_experiment("ChessMovePrediction")
 
     with mlflow.start_run() as run:
@@ -248,10 +247,14 @@ def _run_training() -> None:
         mlflow.log_param("scorer_params", scorer_params)
 
         train_dataset = dataset.ChessMoveFromDiffDataset(
-            "dataset/diff_entries_train.csv", "dataset/diff", limit=LIMIT_DATASET
+            str(paths.diff_entries_train_file()),
+            str(paths.diff_dir()),
+            limit=LIMIT_DATASET,
         )
         val_dataset = dataset.ChessMoveFromDiffDataset(
-            "dataset/diff_entries_eval.csv", "dataset/diff", limit=LIMIT_DATASET
+            str(paths.diff_entries_eval_file()),
+            str(paths.diff_dir()),
+            limit=LIMIT_DATASET,
         )
 
         train_loader = torch.utils.data.DataLoader(
@@ -292,11 +295,11 @@ def _run_training() -> None:
 
             if val_results["acc"] > best_val_acc:
                 best_val_acc = val_results["acc"]
-                ckpt_name = f"models/checkpoint_{run_name}_epoch{epoch + 1}.pth"
+                ckpt_path = models_dir / f"checkpoint_{run_name}_epoch{epoch + 1}.pth"
                 save_checkpoint(
-                    model, optimizer, epoch, path=ckpt_name, best_val_loss=best_val_loss
+                    model, optimizer, epoch, path=str(ckpt_path), best_val_loss=best_val_loss
                 )
-                mlflow.log_artifact(ckpt_name)
+                mlflow.log_artifact(str(ckpt_path))
 
 
 if __name__ == "__main__":

@@ -2,7 +2,10 @@
 name = "chess-detector"
 version = "0.2.0"
 description = "Detect chess moves from camera images of a physical board."
-authors = ["Lorenzo Notaro"]
+authors = [
+    "Lorenzo Notaro <lorenzo.notaro1@gmail.com>",
+    "Paolo Notaro <paolo.notaro@outlook.com>",
+]
 license = "MIT"
 readme = "README.md"
 homepage = "https://github.com/lorenzonotaro/chess-detector"

@@ -27,7 +27,7 @@ chess-detector/
 ├── scripts/                   # one-off / experimental scripts
 ├── assets/chess_board/        # Blender scene + textures used by the renderer
 ├── docs/                      # design notes, blog article
-├── tests/                     # placeholder for tests
+├── tests/                     # test suite (skeleton)
 ├── pyproject.toml             # Poetry project + ruff + ty configuration
 └── .github/workflows/ci.yml   # lint, format and type-check gate
 ```
@@ -109,7 +109,10 @@ your inputs are already 224×224 normalized board crops.
 poetry run chess-detector-api
 ```
 
-Starts a Flask server on `0.0.0.0:5000`. See
+Starts a Flask server bound to `127.0.0.1:5000` by default. Override with
+`CHESS_DETECTOR_API_HOST`, `CHESS_DETECTOR_API_PORT`, and `CHESS_DETECTOR_API_DEBUG=1`
+(debug mode is **disabled by default** and must never be enabled on a
+publicly reachable host). See
 [`src/chess_detector/api/http.py`](src/chess_detector/api/http.py) for the
 endpoints (`/session/begin`, `/predict`, …).
 
