@@ -97,5 +97,9 @@ indent-style = "space"
 python-version = "3.11"
 
 [tool.ty.src]
-include = ["src", "demos", "scripts"]
+# Demos and scripts are lint+format-checked by ruff but kept out of ty's
+# source roots: they rely on heavily-dynamic Tkinter/OpenCV patterns
+# (function-as-namespace, mutable globals, OpenCV overload selection) that
+# would otherwise produce dozens of unactionable type diagnostics.
+include = ["src"]
 exclude = ["src/chess_detector/data/rendering.py"]
