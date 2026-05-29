@@ -23,11 +23,11 @@ class ChessMoveDatasetFromCSV(Dataset):
         self.image_dir = image_dir
 
     def __len__(self):
-        """Docstring for __len__."""
+        """Return the number of image-pair samples in the CSV file."""
         return len(self.df)
 
     def _load_image(self, image_id):
-        """Docstring for _load_image."""
+        """Load and normalize one preprocessed board image by ID."""
         path = os.path.join(self.image_dir, f"{image_id}.png")
         img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
         img = cv2.resize(img, (224, 224)) if img.shape != (224, 224) else img
@@ -35,7 +35,7 @@ class ChessMoveDatasetFromCSV(Dataset):
         return torch.from_numpy(img).unsqueeze(0)  # shape: (1, 224, 224)
 
     def __getitem__(self, index):
-        """Docstring for __getitem__."""
+        """Return before/after tensors and move labels for one row."""
         from chess_detector.data.rendering import get_board_id
 
         row = self.df.iloc[index]
@@ -77,7 +77,7 @@ class ChessMoveFromDiffDataset(Dataset):
         self.diff_images_dir = diff_images_dir
 
     def __len__(self):
-        """Docstring for __len__."""
+        """Return the number of diff-image samples in the CSV file."""
         return len(self.df)
 
     @staticmethod
@@ -185,7 +185,7 @@ class ChessMoveFromDiffDataset(Dataset):
         return patches_tensor
 
     def __getitem__(self, index):
-        """Docstring for __getitem__."""
+        """Return a patched diff image tensor and its move labels for one row."""
         row = self.df.iloc[index]
         id = row["id"]
         img_path = os.path.join(self.diff_images_dir, f"{id}.png")

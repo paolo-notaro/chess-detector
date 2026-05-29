@@ -85,7 +85,7 @@ def stdout_redirected(to=os.devnull):
     ####assert libc.fileno(ctypes.c_void_p.in_dll(libc, "stdout")) == fd == 1
 
     def _redirect_stdout(to):
-        """Docstring for _redirect_stdout."""
+        """Redirect Python stdout to the supplied file object."""
         sys.stdout.close()  # + implicit flush()
         os.dup2(to.fileno(), fd)  # fd writes to 'to' file
         sys.stdout = os.fdopen(fd, "w")  # Python writes to fd
