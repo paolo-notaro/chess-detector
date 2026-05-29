@@ -207,4 +207,3 @@ mlruns
 # Cleanup scratch files
 core_files.txt
 stat.txt
-.env
