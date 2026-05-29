@@ -15,7 +15,7 @@ class HybridLargeChessboardEncoder(nn.Module):
     """Hybrid CNN-Transformer encoder."""
 
     def __init__(self, output_dim=256, num_transformer_layers=1, num_heads=8, dropout=0.1):
-        """Docstring for __init__."""
+        """Configure a grayscale ResNet18 encoder followed by a transformer layer stack."""
         super().__init__()
 
         # Load pre-trained ResNet model
@@ -86,7 +86,7 @@ class SmallCNNEncoder(nn.Module):
     """For ~6k samples: small model, ~400k total with move network."""
 
     def __init__(self, output_dim=256):
-        """Docstring for __init__."""
+        """Configure the smallest image-pair encoder used for fast experiments."""
         super().__init__()
         self.encoder = nn.Sequential(
             nn.Conv2d(1, 16, kernel_size=5, stride=2, padding=2),  # -> [B, 16, 112, 112]
@@ -112,7 +112,7 @@ class MidCNNEncoder(nn.Module):
     """For ~40k samples: ResNet18 variant, ~2-3M total with move network."""
 
     def __init__(self, output_dim=256):
-        """Docstring for __init__."""
+        """Configure the mid-sized ResNet18 image-pair encoder."""
         super().__init__()
         base = models.resnet18(pretrained=True)
         self.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
@@ -141,7 +141,7 @@ class LargeCNNEncoder(nn.Module):
     """For ~100k samples: ResNet34 backbone, ~4-5M total with move network."""
 
     def __init__(self, output_dim=256):
-        """Docstring for __init__."""
+        """Configure the larger ResNet34 image-pair encoder."""
         super().__init__()
         base = models.resnet34(pretrained=True)
         self.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
@@ -171,7 +171,7 @@ class SimpleCNNEncoder(nn.Module):
     """Simple CNN encoder."""
 
     def __init__(self, output_dim: int = 256):
-        """Docstring for __init__."""
+        """Configure a simple CNN encoder for full-board grayscale images."""
         super().__init__()
         # Assuming input is of size [B, 1, 224, 224] (grayscale image)
         self.encoder = nn.Sequential(
