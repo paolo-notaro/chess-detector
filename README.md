@@ -27,7 +27,7 @@ chess-detector/
 ├── scripts/                   # one-off / experimental scripts
 ├── assets/chess_board/        # Blender scene + textures used by the renderer
 ├── docs/                      # design notes, blog article
-├── tests/                     # test suite (skeleton)
+├── tests/                     # fast unit tests for paths, preprocessing and model shapes
 ├── pyproject.toml             # Poetry project + ruff + ty configuration
 └── .github/workflows/ci.yml   # lint, format and type-check gate
 ```
@@ -49,7 +49,7 @@ Poetry and imported as `chess_detector`.
 ## Installation
 
 ```bash
-git clone https://github.com/lorenzonotaro/chess-detector
+git clone https://github.com/paolo-notaro/chess-detector.git
 cd chess-detector
 poetry config virtualenvs.in-project false
 poetry config virtualenvs.path "$HOME/venvs"
@@ -143,7 +143,7 @@ poetry run ruff format .    # format
 poetry run ty check         # static type check
 ```
 
-The same three commands run on every push and pull request via
+The same checks run on every push and pull request via
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ### Conventions
