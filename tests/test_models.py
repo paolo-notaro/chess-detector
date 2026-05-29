@@ -2,7 +2,7 @@
 
 import torch
 
-from chess_detector.models.diff import ChessMoveModel, ConvPatchEncoder
+from chess_detector.models.diff import ChessMoveModel, ConvPatchEncoder, MoveScorer
 from chess_detector.models.pair import ChessMovePredictor, SmallCNNEncoder
 
 
@@ -20,6 +20,40 @@ def test_diff_model_forward():
 
     # Output should be pairwise move scores [Batch, From_Square, To_Square]
     assert scores.shape == (2, 64, 64)
+
+
+def test_conv_patch_encoder_respects_embedding_dim():
+    """Test ConvPatchEncoder output preserves board squares and embedding dimension."""
+    model = ConvPatchEncoder(embed_dim=37)
+    model.eval()
+
+    patches = torch.randn(3, 64, 1, 32, 32)
+
+    with torch.no_grad():
+        embeddings = model(patches)
+
+    assert embeddings.shape == (3, 64, 37)
+
+
+def test_move_scorer_outputs_pairwise_square_logits():
+    """Test MoveScorer projects every from-square against every to-square."""
+    scorer = MoveScorer(embed_dim=16, proj_size=8)
+    scorer.eval()
+
+    embeddings = torch.randn(4, 64, 16)
+
+    with torch.no_grad():
+        scores = scorer(embeddings)
+
+    assert scores.shape == (4, 64, 64)
+    assert scorer.temperature.shape == ()
+
+
+def test_diff_model_positional_encoding_matches_board_and_embedding_dim():
+    """Test ChessMoveModel positional encoding is one vector per board square."""
+    model = ChessMoveModel(embed_dim=24, encoder_class=ConvPatchEncoder)
+
+    assert model.positional_encoding.shape == (64, 24)
 
 
 def test_pair_model_forward():

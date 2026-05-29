@@ -177,7 +177,7 @@ def main() -> None:
 
 
 def _prepare_splits() -> None:
-    """Docstring for _prepare_splits."""
+    """Create train/evaluation CSV splits for existing diff images if needed."""
     train_csv = paths.diff_entries_train_file()
     eval_csv = paths.diff_entries_eval_file()
     if train_csv.exists() and eval_csv.exists():
@@ -213,7 +213,7 @@ def _prepare_splits() -> None:
 
 
 def _run_training() -> None:
-    """Docstring for _run_training."""
+    """Train the diff model, log metrics and save the best checkpoint."""
     models_dir = paths.models_dir()
     models_dir.mkdir(parents=True, exist_ok=True)
     mlflow.set_experiment("ChessMovePrediction")

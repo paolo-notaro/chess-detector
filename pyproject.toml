@@ -8,8 +8,8 @@ authors = [
 ]
 license = "MIT"
 readme = "README.md"
-homepage = "https://github.com/lorenzonotaro/chess-detector"
-repository = "https://github.com/lorenzonotaro/chess-detector"
+homepage = "https://github.com/paolo-notaro/chess-detector"
+repository = "https://github.com/paolo-notaro/chess-detector"
 keywords = ["chess", "computer-vision", "pytorch", "blender"]
 classifiers = [
     "Development Status :: 4 - Beta",

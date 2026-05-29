@@ -1,1 +1,1 @@
-"""Docstring for __init__.py."""
+"""Runnable demo applications for chess-detector."""
